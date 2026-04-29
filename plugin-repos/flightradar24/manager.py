@@ -62,6 +62,8 @@ class FlightRadar24Plugin(BasePlugin):
         self.show_aircraft_type = bool(self.config.get("show_aircraft_type", False))
         self.show_altitude = bool(self.config.get("show_altitude", False))
         self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
+        self.font_size = max(6, min(14, int(self.config.get("font_size", 8))))
+        self.logo_max_width = max(12, min(48, int(self.config.get("logo_max_width", 26))))
         self.airline_logo_dir = Path(
             str(self.config.get("airline_logo_dir", "assets/airline_logos"))
         )
@@ -473,11 +475,8 @@ class FlightRadar24Plugin(BasePlugin):
             self.status_code = "empty"
             self.status_message = "No flights"
 
-    def _load_font(self, preferred_size: int = 6) -> ImageFont.ImageFont:
-        display_font = getattr(self.display_manager, "extra_small_font", None)
-        if display_font is not None:
-            return display_font
-
+    def _load_font(self, preferred_size: Optional[int] = None) -> ImageFont.ImageFont:
+        preferred_size = preferred_size or self.font_size
         font_path = Path("assets/fonts/4x6-font.ttf")
         if font_path.exists():
             try:
@@ -485,6 +484,9 @@ class FlightRadar24Plugin(BasePlugin):
             except (OSError, ValueError):
                 pass
 
+        display_font = getattr(self.display_manager, "extra_small_font", None)
+        if display_font is not None and preferred_size <= 6:
+            return display_font
         fallback_font = getattr(self.display_manager, "small_font", None)
         if fallback_font is not None:
             return fallback_font
@@ -520,7 +522,7 @@ class FlightRadar24Plugin(BasePlugin):
         return self.logo_helper.load_logo(
             airline_code,
             logo_path,
-            max_width=min(18, max(10, self.display_manager.width // 5)),
+            max_width=min(self.logo_max_width, max(12, self.display_manager.width // 4)),
             max_height=max(10, display_height - 4),
         )
 

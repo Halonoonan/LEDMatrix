@@ -82,6 +82,20 @@
       "default": true,
       "description": "Show an airline logo on the left when a matching local logo file exists."
     },
+    "font_size": {
+      "type": "integer",
+      "default": 8,
+      "minimum": 6,
+      "maximum": 14,
+      "description": "Text font size for the FR24 display."
+    },
+    "logo_max_width": {
+      "type": "integer",
+      "default": 26,
+      "minimum": 12,
+      "maximum": 48,
+      "description": "Maximum airline logo width in pixels."
+    },
     "api_token": {
       "type": "string",
       "default": "",
@@ -120,6 +134,8 @@
     "show_aircraft_type",
     "show_altitude",
     "show_airline_logo",
+    "font_size",
+    "logo_max_width",
     "api_token",
     "api_base_url",
     "request_timeout",

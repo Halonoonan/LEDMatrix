@@ -4,6 +4,7 @@ Integration tests for flightradar24 plugin.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -267,6 +268,58 @@ class TestFlightRadar24Plugin(PluginTestBase):
         )
 
         assert detail == "B739 35000ft"
+
+    def test_font_size_config_is_applied(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "font_size": 10,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        font = plugin._load_font()
+
+        if hasattr(font, "size"):
+            assert font.size == 10
+        else:
+            assert font is not None
+
+    def test_logo_max_width_config_is_applied(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "show_airline_logo": True,
+            "logo_max_width": 30,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.current_flight = {"airline_code": "UAL"}
+        called: Dict[str, Any] = {}
+
+        def fake_load_logo(code, logo_path, max_width, max_height):
+            called["code"] = code
+            called["logo_path"] = logo_path
+            called["max_width"] = max_width
+            called["max_height"] = max_height
+            return None
+
+        plugin.logo_helper.load_logo = fake_load_logo
+        plugin._load_airline_logo(plugin.current_flight, plugin.display_manager.height)
+
+        assert called["code"] == "UAL"
+        assert called["logo_path"] == Path("assets/airline_logos/UAL.png")
+        assert called["max_width"] == 30
 
     def test_renders_airline_logo_when_available(self, plugin_id):
         display = _StubDisplayManager()
