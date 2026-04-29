@@ -62,8 +62,9 @@ class FlightRadar24Plugin(BasePlugin):
         self.show_aircraft_type = bool(self.config.get("show_aircraft_type", False))
         self.show_altitude = bool(self.config.get("show_altitude", False))
         self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
-        self.font_size = max(6, min(14, int(self.config.get("font_size", 8))))
-        self.logo_max_width = max(12, min(48, int(self.config.get("logo_max_width", 26))))
+        self.font_size = max(6, min(14, int(self.config.get("font_size", 9))))
+        self.logo_max_width = max(12, min(48, int(self.config.get("logo_max_width", 34))))
+        self.logo_text_gap = max(1, min(12, int(self.config.get("logo_text_gap", 2))))
         self.airline_logo_dir = Path(
             str(self.config.get("airline_logo_dir", "assets/airline_logos"))
         )
@@ -500,15 +501,27 @@ class FlightRadar24Plugin(BasePlugin):
         lines: List[Tuple[str, Tuple[int, int, int]]],
         font: ImageFont.ImageFont,
         x_offset: int = 0,
+        left_bias: bool = False,
     ) -> None:
         line_height = self.display_manager.get_font_height(font)
         total_height = line_height * len(lines)
         y_pos = max(0, (height - total_height) // 2)
         usable_width = max(1, width - x_offset)
+        block_width = 0
+        if left_bias:
+            for text, _color in lines:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                block_width = max(block_width, bbox[2] - bbox[0])
+        block_start = x_offset
+        if left_bias and block_width:
+            block_start = x_offset + min(4, max(0, usable_width - block_width))
         for text, color in lines:
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]
-            x_pos = x_offset + max(0, (usable_width - text_width) // 2)
+            if left_bias:
+                x_pos = block_start
+            else:
+                x_pos = x_offset + max(0, (usable_width - text_width) // 2)
             draw.text((x_pos, y_pos), text, font=font, fill=color)
             y_pos += line_height
 
@@ -561,7 +574,7 @@ class FlightRadar24Plugin(BasePlugin):
             logo_x = 2
             logo_y = max(0, (height - airline_logo.height) // 2)
             image.paste(airline_logo, (logo_x, logo_y), airline_logo)
-            text_x_offset = min(width - 1, airline_logo.width + 6)
+            text_x_offset = min(width - 1, logo_x + airline_logo.width + self.logo_text_gap)
 
         if self.current_flight:
             lines: List[Tuple[str, Tuple[int, int, int]]] = [
@@ -576,7 +589,15 @@ class FlightRadar24Plugin(BasePlugin):
             if can_show_three_lines and self.status_code == "missing_token":
                 lines.append(("set token", self.primary_color))
 
-        self._draw_centered_lines(draw, width, height, lines, font, x_offset=text_x_offset)
+        self._draw_centered_lines(
+            draw,
+            width,
+            height,
+            lines,
+            font,
+            x_offset=text_x_offset,
+            left_bias=airline_logo is not None,
+        )
         self.display_manager.image = image
         self.display_manager.update_display()
 

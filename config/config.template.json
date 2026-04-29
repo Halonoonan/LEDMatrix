@@ -151,8 +151,9 @@
         "show_aircraft_type": false,
         "show_altitude": false,
         "show_airline_logo": true,
-        "font_size": 8,
-        "logo_max_width": 26
+        "font_size": 9,
+        "logo_max_width": 34,
+        "logo_text_gap": 2
     },
     "web-ui-info": {
         "enabled": true,
