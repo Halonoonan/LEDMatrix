@@ -133,10 +133,34 @@ class FlightRadar24Plugin(BasePlugin):
         for value in values:
             if value is None:
                 continue
+            if isinstance(value, (dict, list, tuple, set)):
+                continue
             text = str(value).strip()
             if text:
                 return text
         return fallback
+
+    def _extract_airport_code(self, airport_data: Any) -> str:
+        """Pull the most useful short airport code from varying FR24 shapes."""
+        if not isinstance(airport_data, dict):
+            return ""
+
+        code = airport_data.get("code") if isinstance(airport_data.get("code"), dict) else {}
+        info = airport_data.get("info") if isinstance(airport_data.get("info"), dict) else {}
+
+        return self._coerce_str(
+            airport_data.get("iata"),
+            airport_data.get("fs"),
+            airport_data.get("icao"),
+            airport_data.get("iataCode"),
+            airport_data.get("icaoCode"),
+            code.get("iata"),
+            code.get("icao"),
+            code.get("iataCode"),
+            code.get("icaoCode"),
+            info.get("iata"),
+            info.get("icao"),
+        )
 
     def _extract_flights(self, payload: Any) -> List[Dict[str, Any]]:
         if isinstance(payload, list):
@@ -154,22 +178,49 @@ class FlightRadar24Plugin(BasePlugin):
         airport = raw_flight.get("airport") if isinstance(raw_flight.get("airport"), dict) else {}
         origin = route.get("origin") if isinstance(route.get("origin"), dict) else {}
         destination = route.get("destination") if isinstance(route.get("destination"), dict) else {}
+        airport_origin = airport.get("origin") if isinstance(airport.get("origin"), dict) else {}
+        airport_destination = airport.get("destination") if isinstance(airport.get("destination"), dict) else {}
+        airport_code = airport.get("code") if isinstance(airport.get("code"), dict) else {}
 
         orig = self._coerce_str(
             raw_flight.get("orig_iata"),
+            raw_flight.get("orig_icao"),
             raw_flight.get("origin_iata"),
+            raw_flight.get("origin_icao"),
+            raw_flight.get("airport_origin"),
             raw_flight.get("origin"),
+            route.get("origin"),
+            route.get("from"),
+            route.get("departure"),
+            route.get("originIata"),
+            route.get("originIcao"),
             origin.get("iata"),
             origin.get("icao"),
+            origin.get("code"),
+            self._extract_airport_code(origin),
+            self._extract_airport_code(airport_origin),
+            airport_code.get("origin"),
             airport.get("origin"),
             fallback="???",
         )
         dest = self._coerce_str(
             raw_flight.get("dest_iata"),
+            raw_flight.get("dest_icao"),
             raw_flight.get("destination_iata"),
+            raw_flight.get("destination_icao"),
+            raw_flight.get("airport_destination"),
             raw_flight.get("destination"),
+            route.get("destination"),
+            route.get("to"),
+            route.get("arrival"),
+            route.get("destinationIata"),
+            route.get("destinationIcao"),
             destination.get("iata"),
             destination.get("icao"),
+            destination.get("code"),
+            self._extract_airport_code(destination),
+            self._extract_airport_code(airport_destination),
+            airport_code.get("destination"),
             airport.get("destination"),
             fallback="???",
         )
@@ -177,6 +228,8 @@ class FlightRadar24Plugin(BasePlugin):
 
     def _parse_flight(self, raw_flight: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         flight = raw_flight.get("flight") if isinstance(raw_flight.get("flight"), dict) else {}
+        aircraft = raw_flight.get("aircraft") if isinstance(raw_flight.get("aircraft"), dict) else {}
+        aircraft_model = aircraft.get("model") if isinstance(aircraft.get("model"), dict) else {}
         callsign = self._coerce_str(
             raw_flight.get("callsign"),
             raw_flight.get("flight"),
@@ -199,6 +252,9 @@ class FlightRadar24Plugin(BasePlugin):
             raw_flight.get("type"),
             raw_flight.get("aircraft_type"),
             raw_flight.get("equipment"),
+            aircraft.get("type"),
+            aircraft.get("code"),
+            aircraft_model.get("code"),
             fallback="UNK",
         )
 

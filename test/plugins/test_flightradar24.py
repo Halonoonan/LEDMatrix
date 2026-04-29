@@ -198,6 +198,46 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert plugin.current_flight["callsign"] == "UAL123"
         assert any(pixel != (0, 0, 0) for pixel in display.image.getdata())
 
+    def test_mocked_nested_route_fields(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        self.mock_cache_manager._memory_cache.clear()
+        plugin.last_update = 0.0
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "data": [
+                    {
+                        "flight": {"callsign": "AIK594"},
+                        "aircraft": {"model": {"code": "A21N"}},
+                        "airport": {
+                            "origin": {"code": {"iata": "MIA", "icao": "KMIA"}},
+                            "destination": {"code": {"iata": "PSP", "icao": "KPSP"}},
+                        },
+                        "lat": 33.7000,
+                        "lon": -116.3200,
+                    }
+                ]
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.status_code == "ok"
+        assert plugin.current_flight["callsign"] == "AIK594"
+        assert plugin.current_flight["origin"] == "MIA"
+        assert plugin.current_flight["destination"] == "PSP"
+        assert plugin.current_flight["aircraft_type"] == "A21N"
+
     @pytest.mark.parametrize(
         ("status_code", "headers", "expected_status"),
         [
