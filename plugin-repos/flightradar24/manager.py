@@ -63,8 +63,9 @@ class FlightRadar24Plugin(BasePlugin):
         self.show_altitude = bool(self.config.get("show_altitude", False))
         self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
         self.font_size = max(6, min(14, int(self.config.get("font_size", 9))))
-        self.logo_max_width = max(12, min(48, int(self.config.get("logo_max_width", 34))))
+        self.logo_max_width = max(12, min(64, int(self.config.get("logo_max_width", 34))))
         self.logo_text_gap = max(1, min(12, int(self.config.get("logo_text_gap", 2))))
+        self.logo_allow_upscale = bool(self.config.get("logo_allow_upscale", True))
         self.airline_logo_dir = Path(
             str(self.config.get("airline_logo_dir", "assets/airline_logos"))
         )
@@ -531,13 +532,32 @@ class FlightRadar24Plugin(BasePlugin):
         airline_code = self._normalize_airline_code(flight.get("airline_code"))
         if not airline_code:
             return None
+        target_width = min(self.logo_max_width, max(12, self.display_manager.width // 3))
+        target_height = max(10, display_height - 2)
         logo_path = self.airline_logo_dir / f"{airline_code}.png"
-        return self.logo_helper.load_logo(
+        logo = self.logo_helper.load_logo(
             airline_code,
             logo_path,
-            max_width=min(self.logo_max_width, max(12, self.display_manager.width // 4)),
-            max_height=max(10, display_height - 4),
+            max_width=target_width,
+            max_height=target_height,
         )
+        if logo is None or not self.logo_allow_upscale:
+            return logo
+        return self._upscale_logo(logo, target_width, target_height)
+
+    @staticmethod
+    def _upscale_logo(logo: Image.Image, max_width: int, max_height: int) -> Image.Image:
+        """Scale up smaller logos so they better fill the reserved display area."""
+        if logo.width <= 0 or logo.height <= 0:
+            return logo
+        width_ratio = max_width / float(logo.width)
+        height_ratio = max_height / float(logo.height)
+        scale = min(width_ratio, height_ratio)
+        if scale <= 1.0:
+            return logo
+        new_width = max(1, int(round(logo.width * scale)))
+        new_height = max(1, int(round(logo.height * scale)))
+        return logo.resize((new_width, new_height), Image.Resampling.NEAREST)
 
     def _route_text(self, flight: Dict[str, Any]) -> str:
         origin = flight.get("origin", "???")

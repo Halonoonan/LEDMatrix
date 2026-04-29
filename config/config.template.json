@@ -153,7 +153,8 @@
         "show_airline_logo": true,
         "font_size": 9,
         "logo_max_width": 34,
-        "logo_text_gap": 2
+        "logo_text_gap": 2,
+        "logo_allow_upscale": true
     },
     "web-ui-info": {
         "enabled": true,

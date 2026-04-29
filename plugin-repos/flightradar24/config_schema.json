@@ -93,7 +93,7 @@
       "type": "integer",
       "default": 34,
       "minimum": 12,
-      "maximum": 48,
+      "maximum": 64,
       "description": "Maximum airline logo width in pixels."
     },
     "logo_text_gap": {
@@ -102,6 +102,11 @@
       "minimum": 1,
       "maximum": 12,
       "description": "Gap in pixels between the airline logo and the text block."
+    },
+    "logo_allow_upscale": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow smaller airline logos to be enlarged to better fill the reserved display area."
     },
     "api_token": {
       "type": "string",
@@ -144,6 +149,7 @@
     "font_size",
     "logo_max_width",
     "logo_text_gap",
+    "logo_allow_upscale",
     "api_token",
     "api_base_url",
     "request_timeout",

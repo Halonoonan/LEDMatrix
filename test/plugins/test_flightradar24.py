@@ -321,6 +321,30 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert called["logo_path"] == Path("assets/airline_logos/UAL.png")
         assert called["max_width"] == 30
 
+    def test_smaller_logos_can_be_upscaled(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "show_airline_logo": True,
+            "logo_max_width": 42,
+            "logo_allow_upscale": True,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.current_flight = {"airline_code": "DAL"}
+        plugin.logo_helper.load_logo = lambda *args, **kwargs: Image.new("RGBA", (20, 20), (255, 0, 0, 255))
+
+        logo = plugin._load_airline_logo(plugin.current_flight, plugin.display_manager.height)
+
+        assert logo is not None
+        assert logo.width > 20
+        assert logo.height > 20
+
     def test_renders_airline_logo_when_available(self, plugin_id):
         display = _StubDisplayManager()
         config = {
