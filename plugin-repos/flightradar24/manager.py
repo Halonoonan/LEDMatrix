@@ -59,6 +59,14 @@ class FlightRadar24Plugin(BasePlugin):
         ).rstrip("/")
         self.request_timeout = max(3, int(self.config.get("request_timeout", 10)))
         self.result_limit = max(1, min(100, int(self.config.get("result_limit", 20))))
+        endpoint_order = self.config.get("endpoint_order", ["full", "light"])
+        if not isinstance(endpoint_order, list):
+            endpoint_order = ["full", "light"]
+        self.endpoint_order = [
+            str(item).strip().lower()
+            for item in endpoint_order
+            if str(item).strip().lower() in {"full", "light"}
+        ] or ["full", "light"]
         self.api_token = self._resolve_api_token()
         self.cache_key = (
             f"{self.plugin_id}_{self.lat:.4f}_{self.lon:.4f}_"
@@ -306,28 +314,41 @@ class FlightRadar24Plugin(BasePlugin):
             self.status_message = f"HTTP {response.status_code}"
 
     def _fetch_live_flights(self) -> List[Dict[str, Any]]:
-        response = self.session.get(
-            f"{self.api_base_url}/live/flight-positions/light",
-            headers=self._request_headers(),
-            params={
-                "bounds": self._build_bounds(),
-                "limit": self.result_limit,
-            },
-            timeout=self.request_timeout,
-        )
-        if response.status_code != 200:
-            self._handle_http_error(response)
-            return []
+        last_error_response: Optional[Response] = None
 
-        payload = response.json()
-        parsed_flights = []
-        for raw_flight in self._extract_flights(payload):
-            parsed = self._parse_flight(raw_flight)
-            if parsed:
-                parsed_flights.append(parsed)
+        for endpoint_variant in self.endpoint_order:
+            response = self.session.get(
+                f"{self.api_base_url}/live/flight-positions/{endpoint_variant}",
+                headers=self._request_headers(),
+                params={
+                    "bounds": self._build_bounds(),
+                    "limit": self.result_limit,
+                },
+                timeout=self.request_timeout,
+            )
+            if response.status_code != 200:
+                last_error_response = response
+                # If the richer endpoint isn't available for this account, fall back
+                # to light before surfacing the error to the UI.
+                if endpoint_variant == "full" and response.status_code in {401, 403, 404}:
+                    continue
+                self._handle_http_error(response)
+                return []
 
-        parsed_flights.sort(key=lambda item: item["distance_km"])
-        return parsed_flights
+            payload = response.json()
+            parsed_flights = []
+            for raw_flight in self._extract_flights(payload):
+                parsed = self._parse_flight(raw_flight)
+                if parsed:
+                    parsed_flights.append(parsed)
+
+            parsed_flights.sort(key=lambda item: item["distance_km"])
+            if parsed_flights or endpoint_variant == self.endpoint_order[-1]:
+                return parsed_flights
+
+        if last_error_response is not None:
+            self._handle_http_error(last_error_response)
+        return []
 
     def update(self) -> None:
         if not self.enabled:

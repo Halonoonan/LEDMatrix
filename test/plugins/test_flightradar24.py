@@ -238,6 +238,89 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert plugin.current_flight["destination"] == "PSP"
         assert plugin.current_flight["aircraft_type"] == "A21N"
 
+    def test_prefers_full_endpoint(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        self.mock_cache_manager._memory_cache.clear()
+        plugin.last_update = 0.0
+        calls = []
+
+        def fake_get(url, *args, **kwargs):
+            calls.append(url)
+            return _FakeResponse(
+                200,
+                {
+                    "data": [
+                        {
+                            "callsign": "UAL123",
+                            "airport": {
+                                "origin": {"code": {"iata": "SFO"}},
+                                "destination": {"code": {"iata": "LAX"}},
+                            },
+                            "lat": 33.7000,
+                            "lon": -116.3200,
+                        }
+                    ]
+                },
+            )
+
+        plugin.session.get = fake_get
+        plugin.update()
+
+        assert calls[0].endswith("/live/flight-positions/full")
+        assert plugin.current_flight["origin"] == "SFO"
+        assert plugin.current_flight["destination"] == "LAX"
+
+    def test_falls_back_to_light_endpoint(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        self.mock_cache_manager._memory_cache.clear()
+        plugin.last_update = 0.0
+        calls = []
+
+        def fake_get(url, *args, **kwargs):
+            calls.append(url)
+            if url.endswith("/live/flight-positions/full"):
+                return _FakeResponse(403, {})
+            return _FakeResponse(
+                200,
+                {
+                    "data": [
+                        {
+                            "callsign": "SWA839",
+                            "lat": 33.60862,
+                            "lon": -116.55819,
+                        }
+                    ]
+                },
+            )
+
+        plugin.session.get = fake_get
+        plugin.update()
+
+        assert calls[0].endswith("/live/flight-positions/full")
+        assert calls[1].endswith("/live/flight-positions/light")
+        assert plugin.status_code == "ok"
+        assert plugin.current_flight["callsign"] == "SWA839"
+
     @pytest.mark.parametrize(
         ("status_code", "headers", "expected_status"),
         [
