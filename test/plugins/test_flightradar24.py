@@ -196,6 +196,7 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert plugin.status_code == "ok"
         assert len(plugin.current_flights) == 2
         assert plugin.current_flight["callsign"] == "UAL123"
+        assert plugin.current_flight["airline_code"] == "UAL"
         assert any(pixel != (0, 0, 0) for pixel in display.image.getdata())
 
     def test_mocked_nested_route_fields(self, plugin_id):
@@ -237,6 +238,66 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert plugin.current_flight["origin"] == "MIA"
         assert plugin.current_flight["destination"] == "PSP"
         assert plugin.current_flight["aircraft_type"] == "A21N"
+        assert plugin.current_flight["airline_code"] == "AIK"
+
+    def test_renders_airline_logo_when_available(self, plugin_id):
+        display = _StubDisplayManager()
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "api_token": "demo-token",
+            "show_airline_logo": True,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, display)
+        plugin.current_flight = {
+            "callsign": "UAL123",
+            "origin": "SFO",
+            "destination": "LAX",
+            "distance_km": 42.0,
+            "aircraft_type": "B739",
+            "airline_code": "UAL",
+        }
+
+        def fake_load_logo(*args, **kwargs):
+            return Image.new("RGBA", (12, 12), (255, 0, 0, 255))
+
+        plugin.logo_helper.load_logo = fake_load_logo
+        plugin.display(force_clear=True)
+
+        assert display.image.getpixel((4, 10))[0] > 0
+
+    def test_text_fallback_when_logo_missing(self, plugin_id):
+        display = _StubDisplayManager()
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "api_token": "demo-token",
+            "show_airline_logo": True,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, display)
+        plugin.current_flight = {
+            "callsign": "SWA839",
+            "origin": "PHX",
+            "destination": "PSP",
+            "distance_km": 17.0,
+            "aircraft_type": "B38M",
+            "airline_code": "SWA",
+        }
+        plugin.logo_helper.load_logo = lambda *args, **kwargs: None
+
+        plugin.display(force_clear=True)
+
+        assert any(pixel != (0, 0, 0) for pixel in display.image.getdata())
 
     def test_prefers_full_endpoint(self, plugin_id):
         config = {

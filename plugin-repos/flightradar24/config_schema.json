@@ -72,6 +72,11 @@
       "default": false,
       "description": "Show the aircraft type on the third line instead of the distance."
     },
+    "show_airline_logo": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show an airline logo on the left when a matching local logo file exists."
+    },
     "api_token": {
       "type": "string",
       "default": "",
@@ -108,6 +113,7 @@
     "primary_color",
     "secondary_color",
     "show_aircraft_type",
+    "show_airline_logo",
     "api_token",
     "api_base_url",
     "request_timeout",

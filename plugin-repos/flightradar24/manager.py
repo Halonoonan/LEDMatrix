@@ -14,6 +14,7 @@ from requests import Response
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.common.logo_helper import LogoHelper
 from src.plugin_system.base_plugin import BasePlugin
 
 
@@ -37,6 +38,11 @@ class FlightRadar24Plugin(BasePlugin):
         super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
         self._apply_config(config)
         self.session = self._build_session()
+        self.logo_helper = LogoHelper(
+            getattr(display_manager, "width", 64),
+            getattr(display_manager, "height", 32),
+            logger=self.logger,
+        )
         self.current_flights: List[Dict[str, Any]] = []
         self.current_flight: Optional[Dict[str, Any]] = None
         self.status_code = "init"
@@ -54,6 +60,10 @@ class FlightRadar24Plugin(BasePlugin):
         self.primary_color = self._normalize_color(self.config.get("primary_color"), (255, 255, 255))
         self.secondary_color = self._normalize_color(self.config.get("secondary_color"), (0, 255, 255))
         self.show_aircraft_type = bool(self.config.get("show_aircraft_type", False))
+        self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
+        self.airline_logo_dir = Path(
+            str(self.config.get("airline_logo_dir", "assets/airline_logos"))
+        )
         self.api_base_url = str(
             self.config.get("api_base_url", "https://fr24api.flightradar24.com/api")
         ).rstrip("/")
@@ -170,6 +180,50 @@ class FlightRadar24Plugin(BasePlugin):
             info.get("icao"),
         )
 
+    @staticmethod
+    def _normalize_airline_code(value: Any) -> str:
+        if value is None:
+            return ""
+        text = "".join(char for char in str(value).upper().strip() if char.isalnum())
+        return text[:3] if len(text) >= 2 else ""
+
+    def _extract_airline_code(self, raw_flight: Dict[str, Any], callsign: str) -> str:
+        airline = raw_flight.get("airline") if isinstance(raw_flight.get("airline"), dict) else {}
+        operator = raw_flight.get("operator") if isinstance(raw_flight.get("operator"), dict) else {}
+        owner = raw_flight.get("owner") if isinstance(raw_flight.get("owner"), dict) else {}
+        flight_data = raw_flight.get("flight") if isinstance(raw_flight.get("flight"), dict) else {}
+        airline_code = airline.get("code") if isinstance(airline.get("code"), dict) else {}
+        operator_code = operator.get("code") if isinstance(operator.get("code"), dict) else {}
+        owner_code = owner.get("code") if isinstance(owner.get("code"), dict) else {}
+
+        candidates = (
+            raw_flight.get("airline_icao"),
+            raw_flight.get("operator_icao"),
+            raw_flight.get("owner_icao"),
+            raw_flight.get("airline"),
+            airline.get("icao"),
+            airline.get("iata"),
+            airline_code.get("icao"),
+            airline_code.get("iata"),
+            operator.get("icao"),
+            operator.get("iata"),
+            operator_code.get("icao"),
+            operator_code.get("iata"),
+            owner.get("icao"),
+            owner.get("iata"),
+            owner_code.get("icao"),
+            owner_code.get("iata"),
+            flight_data.get("airline"),
+            flight_data.get("operator"),
+            callsign[:3] if callsign else "",
+        )
+
+        for candidate in candidates:
+            normalized = self._normalize_airline_code(candidate)
+            if normalized:
+                return normalized
+        return ""
+
     def _extract_flights(self, payload: Any) -> List[Dict[str, Any]]:
         if isinstance(payload, list):
             return [item for item in payload if isinstance(item, dict)]
@@ -265,6 +319,7 @@ class FlightRadar24Plugin(BasePlugin):
             aircraft_model.get("code"),
             fallback="UNK",
         )
+        airline_code = self._extract_airline_code(raw_flight, callsign)
 
         return {
             "callsign": callsign,
@@ -272,6 +327,7 @@ class FlightRadar24Plugin(BasePlugin):
             "destination": destination,
             "distance_km": distance_km,
             "aircraft_type": aircraft_type,
+            "airline_code": airline_code,
         }
 
     @staticmethod
@@ -433,16 +489,32 @@ class FlightRadar24Plugin(BasePlugin):
         height: int,
         lines: List[Tuple[str, Tuple[int, int, int]]],
         font: ImageFont.ImageFont,
+        x_offset: int = 0,
     ) -> None:
         line_height = self.display_manager.get_font_height(font)
         total_height = line_height * len(lines)
         y_pos = max(0, (height - total_height) // 2)
+        usable_width = max(1, width - x_offset)
         for text, color in lines:
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]
-            x_pos = max(0, (width - text_width) // 2)
+            x_pos = x_offset + max(0, (usable_width - text_width) // 2)
             draw.text((x_pos, y_pos), text, font=font, fill=color)
             y_pos += line_height
+
+    def _load_airline_logo(self, flight: Optional[Dict[str, Any]], display_height: int) -> Optional[Image.Image]:
+        if not self.show_airline_logo or not flight:
+            return None
+        airline_code = self._normalize_airline_code(flight.get("airline_code"))
+        if not airline_code:
+            return None
+        logo_path = self.airline_logo_dir / f"{airline_code}.png"
+        return self.logo_helper.load_logo(
+            airline_code,
+            logo_path,
+            max_width=min(18, max(10, self.display_manager.width // 5)),
+            max_height=max(10, display_height - 4),
+        )
 
     def _route_text(self, flight: Dict[str, Any]) -> str:
         origin = flight.get("origin", "???")
@@ -465,6 +537,14 @@ class FlightRadar24Plugin(BasePlugin):
         font = self._load_font()
         line_height = self.display_manager.get_font_height(font)
         can_show_three_lines = height >= line_height * 3
+        airline_logo = self._load_airline_logo(self.current_flight, height)
+        text_x_offset = 0
+
+        if airline_logo is not None:
+            logo_x = 2
+            logo_y = max(0, (height - airline_logo.height) // 2)
+            image.paste(airline_logo, (logo_x, logo_y), airline_logo)
+            text_x_offset = min(width - 1, airline_logo.width + 6)
 
         if self.current_flight:
             lines: List[Tuple[str, Tuple[int, int, int]]] = [
@@ -479,7 +559,7 @@ class FlightRadar24Plugin(BasePlugin):
             if can_show_three_lines and self.status_code == "missing_token":
                 lines.append(("set token", self.primary_color))
 
-        self._draw_centered_lines(draw, width, height, lines, font)
+        self._draw_centered_lines(draw, width, height, lines, font, x_offset=text_x_offset)
         self.display_manager.image = image
         self.display_manager.update_display()
 

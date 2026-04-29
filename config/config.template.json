@@ -148,7 +148,8 @@
             255,
             255
         ],
-        "show_aircraft_type": false
+        "show_aircraft_type": false,
+        "show_airline_logo": true
     },
     "web-ui-info": {
         "enabled": true,
