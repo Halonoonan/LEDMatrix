@@ -175,6 +175,7 @@ class TestFlightRadar24Plugin(PluginTestBase):
                         "orig_iata": "SFO",
                         "dest_iata": "LAX",
                         "type": "B739",
+                        "alt": 35000,
                         "lat": 33.7000,
                         "lon": -116.3200,
                     },
@@ -197,6 +198,7 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert len(plugin.current_flights) == 2
         assert plugin.current_flight["callsign"] == "UAL123"
         assert plugin.current_flight["airline_code"] == "UAL"
+        assert plugin.current_flight["altitude_ft"] == 35000.0
         assert any(pixel != (0, 0, 0) for pixel in display.image.getdata())
 
     def test_mocked_nested_route_fields(self, plugin_id):
@@ -238,7 +240,33 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert plugin.current_flight["origin"] == "MIA"
         assert plugin.current_flight["destination"] == "PSP"
         assert plugin.current_flight["aircraft_type"] == "A21N"
+        assert plugin.current_flight["altitude_ft"] is None
         assert plugin.current_flight["airline_code"] == "AIK"
+
+    def test_detail_text_can_combine_aircraft_type_and_altitude(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "show_aircraft_type": True,
+            "show_altitude": True,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        detail = plugin._detail_text(
+            {
+                "aircraft_type": "B739",
+                "altitude_ft": 35000,
+                "distance_km": 42.0,
+            }
+        )
+
+        assert detail == "B739 35000ft"
 
     def test_renders_airline_logo_when_available(self, plugin_id):
         display = _StubDisplayManager()

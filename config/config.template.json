@@ -149,6 +149,7 @@
             255
         ],
         "show_aircraft_type": false,
+        "show_altitude": false,
         "show_airline_logo": true
     },
     "web-ui-info": {

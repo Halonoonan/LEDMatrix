@@ -72,6 +72,11 @@
       "default": false,
       "description": "Show the aircraft type on the third line instead of the distance."
     },
+    "show_altitude": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show the aircraft altitude in feet on the third line."
+    },
     "show_airline_logo": {
       "type": "boolean",
       "default": true,
@@ -113,6 +118,7 @@
     "primary_color",
     "secondary_color",
     "show_aircraft_type",
+    "show_altitude",
     "show_airline_logo",
     "api_token",
     "api_base_url",

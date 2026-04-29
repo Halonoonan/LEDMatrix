@@ -60,6 +60,7 @@ class FlightRadar24Plugin(BasePlugin):
         self.primary_color = self._normalize_color(self.config.get("primary_color"), (255, 255, 255))
         self.secondary_color = self._normalize_color(self.config.get("secondary_color"), (0, 255, 255))
         self.show_aircraft_type = bool(self.config.get("show_aircraft_type", False))
+        self.show_altitude = bool(self.config.get("show_altitude", False))
         self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
         self.airline_logo_dir = Path(
             str(self.config.get("airline_logo_dir", "assets/airline_logos"))
@@ -320,6 +321,12 @@ class FlightRadar24Plugin(BasePlugin):
             fallback="UNK",
         )
         airline_code = self._extract_airline_code(raw_flight, callsign)
+        altitude_ft = self._coerce_float(
+            raw_flight.get("alt"),
+            raw_flight.get("altitude"),
+            raw_flight.get("altitude_ft"),
+            flight.get("altitude"),
+        )
 
         return {
             "callsign": callsign,
@@ -327,6 +334,7 @@ class FlightRadar24Plugin(BasePlugin):
             "destination": destination,
             "distance_km": distance_km,
             "aircraft_type": aircraft_type,
+            "altitude_ft": altitude_ft,
             "airline_code": airline_code,
         }
 
@@ -522,8 +530,15 @@ class FlightRadar24Plugin(BasePlugin):
         return f"{origin}->{destination}"
 
     def _detail_text(self, flight: Dict[str, Any]) -> str:
+        detail_parts: List[str] = []
         if self.show_aircraft_type:
-            return flight.get("aircraft_type", "UNK")
+            detail_parts.append(flight.get("aircraft_type", "UNK"))
+        if self.show_altitude:
+            altitude_ft = flight.get("altitude_ft")
+            if isinstance(altitude_ft, (int, float)):
+                detail_parts.append(f"{int(round(altitude_ft))}ft")
+        if detail_parts:
+            return " ".join(detail_parts)
         return f"{int(round(flight.get('distance_km', 0.0)))} km"
 
     def display(self, force_clear: bool = False) -> None:
