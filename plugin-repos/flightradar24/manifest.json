@@ -1,0 +1,22 @@
+{
+  "id": "flightradar24",
+  "name": "FlightRadar24 Nearby Flights",
+  "version": "1.0.0",
+  "author": "OpenAI",
+  "description": "Shows the nearest live flights around a configured home location using the official FlightRadar24 API.",
+  "entry_point": "manager.py",
+  "class_name": "FlightRadar24Plugin",
+  "category": "aviation",
+  "tags": [
+    "fr24",
+    "aviation",
+    "flights",
+    "nearby",
+    "location"
+  ],
+  "display_modes": [
+    "flightradar24"
+  ],
+  "update_interval": 30,
+  "default_duration": 12
+}

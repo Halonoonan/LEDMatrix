@@ -1,0 +1,1 @@
+# Uses requests and Pillow from the main LEDMatrix requirements.

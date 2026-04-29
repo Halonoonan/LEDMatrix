@@ -11,6 +11,7 @@ Coverage targets:
 """
 
 import os
+import json
 import time
 import unittest
 from pathlib import Path
@@ -741,6 +742,89 @@ class TestFetchRegistryRaiseOnFailure(unittest.TestCase):
         ):
             result = self.sm.fetch_registry()  # default raise_on_failure=False
         self.assertEqual(result, {"plugins": [{"id": "cached"}]})
+
+
+class TestCustomGitHubInstallMetadata(unittest.TestCase):
+    def setUp(self):
+        self.sm = PluginStoreManager(plugins_dir="plugins")
+
+    def test_install_from_tree_url_extracts_plugin_path_and_writes_metadata(self):
+        manifest = {
+            "id": "flightradar24",
+            "name": "FlightRadar24 Nearby Flights",
+            "class_name": "FlightRadar24Plugin",
+            "display_modes": ["flightradar24"],
+        }
+        temp_dir = Path("C:/mock-temp/ledmatrix_plugin_tree")
+        final_path = Path("plugins") / "flightradar24"
+        manifest_path = temp_dir / "manifest.json"
+
+        def fake_exists(path_obj):
+            path_str = str(path_obj).replace("\\", "/")
+            if path_str == str(manifest_path).replace("\\", "/"):
+                return True
+            if path_str == str(final_path).replace("\\", "/"):
+                return False
+            if path_str == str(final_path / ".git").replace("\\", "/"):
+                return False
+            return False
+
+        with patch("src.plugin_system.store_manager.tempfile.mkdtemp", return_value=str(temp_dir)), \
+             patch.object(self.sm, "_install_from_monorepo", return_value=True) as mock_install_monorepo, \
+             patch.object(self.sm, "_install_dependencies", return_value=True), \
+             patch.object(self.sm, "_write_install_metadata") as mock_write_metadata, \
+             patch("src.plugin_system.store_manager.shutil.move"), \
+             patch("src.plugin_system.store_manager.Path.exists", autospec=True, side_effect=fake_exists), \
+             patch("builtins.open", unittest.mock.mock_open(read_data=json.dumps(manifest))):
+            result = self.sm.install_from_url(
+                "https://github.com/ChuckBuilds/LEDMatrix/tree/main/plugin-repos/flightradar24"
+            )
+
+        self.assertTrue(result["success"])
+        mock_install_monorepo.assert_called_once_with(
+            "https://github.com/ChuckBuilds/LEDMatrix/archive/refs/heads/main.zip",
+            "plugin-repos/flightradar24",
+            temp_dir,
+        )
+        mock_write_metadata.assert_called_once_with(final_path, {
+            "install_type": "github_url",
+            "repo_url": "https://github.com/ChuckBuilds/LEDMatrix",
+            "plugin_path": "plugin-repos/flightradar24",
+            "branch": "main",
+        })
+
+    def test_update_uses_saved_github_url_metadata_for_non_git_plugin(self):
+        plugin_dir = Path("C:/mock-plugins/flightradar24")
+        metadata_path = plugin_dir / ".plugin_metadata.json"
+        metadata = {
+            "install_type": "github_url",
+            "repo_url": "https://github.com/ChuckBuilds/LEDMatrix",
+            "plugin_path": "plugin-repos/flightradar24",
+            "branch": "main",
+        }
+
+        def fake_exists(path_obj):
+            path_str = str(path_obj).replace("\\", "/")
+            return path_str in {
+                str(plugin_dir).replace("\\", "/"),
+                str(metadata_path).replace("\\", "/"),
+            }
+
+        with patch.object(self.sm, "_find_plugin_path", return_value=plugin_dir), \
+             patch("src.plugin_system.store_manager.Path.exists", autospec=True, side_effect=fake_exists), \
+             patch("builtins.open", unittest.mock.mock_open(read_data=json.dumps(metadata))), \
+             patch.object(self.sm, "_get_local_git_info", return_value=None), \
+             patch.object(self.sm, "install_from_url", return_value={"success": True}) as mock_install, \
+             patch("src.plugin_system.store_manager.json.load", return_value=metadata):
+            updated = self.sm.update_plugin("flightradar24")
+
+        self.assertTrue(updated)
+        mock_install.assert_called_once_with(
+            "https://github.com/ChuckBuilds/LEDMatrix",
+            plugin_id="flightradar24",
+            plugin_path="plugin-repos/flightradar24",
+            branch="main",
+        )
 
 
 if __name__ == "__main__":

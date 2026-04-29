@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FlightRadar24 Plugin Configuration",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable the nearby FlightRadar24 display."
+    },
+    "lat": {
+      "type": "number",
+      "default": 33.6634,
+      "minimum": -90,
+      "maximum": 90,
+      "description": "Home latitude used to search nearby flights."
+    },
+    "lon": {
+      "type": "number",
+      "default": -116.31,
+      "minimum": -180,
+      "maximum": 180,
+      "description": "Home longitude used to search nearby flights."
+    },
+    "radius_km": {
+      "type": "number",
+      "default": 40,
+      "minimum": 1,
+      "maximum": 250,
+      "description": "Search radius in kilometers."
+    },
+    "cache_seconds": {
+      "type": "integer",
+      "default": 30,
+      "minimum": 10,
+      "maximum": 3600,
+      "description": "How long to reuse cached API data before refreshing."
+    },
+    "display_duration": {
+      "type": "number",
+      "default": 12,
+      "minimum": 1,
+      "maximum": 300,
+      "description": "How long to display the plugin in rotation."
+    },
+    "primary_color": {
+      "type": "array",
+      "default": [255, 255, 255],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "description": "Primary RGB text color."
+    },
+    "secondary_color": {
+      "type": "array",
+      "default": [0, 255, 255],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "description": "Secondary RGB text color."
+    },
+    "show_aircraft_type": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show the aircraft type on the third line instead of the distance."
+    },
+    "api_token": {
+      "type": "string",
+      "default": "",
+      "description": "Optional FlightRadar24 API token. Prefer config/config_secrets.json or environment variables."
+    },
+    "api_base_url": {
+      "type": "string",
+      "default": "https://fr24api.flightradar24.com/api",
+      "description": "Base URL for the official FlightRadar24 API."
+    },
+    "request_timeout": {
+      "type": "integer",
+      "default": 10,
+      "minimum": 3,
+      "maximum": 60,
+      "description": "HTTP request timeout in seconds."
+    },
+    "result_limit": {
+      "type": "integer",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Maximum number of flights requested from the API."
+    }
+  },
+  "additionalProperties": false,
+  "x-propertyOrder": [
+    "enabled",
+    "lat",
+    "lon",
+    "radius_km",
+    "cache_seconds",
+    "display_duration",
+    "primary_color",
+    "secondary_color",
+    "show_aircraft_type",
+    "api_token",
+    "api_base_url",
+    "request_timeout",
+    "result_limit"
+  ]
+}

@@ -131,6 +131,25 @@
         "auto_discover": true,
         "auto_load_enabled": true
     },
+    "flightradar24": {
+        "enabled": true,
+        "lat": 33.6634,
+        "lon": -116.31,
+        "radius_km": 40,
+        "cache_seconds": 30,
+        "display_duration": 12,
+        "primary_color": [
+            255,
+            255,
+            255
+        ],
+        "secondary_color": [
+            0,
+            255,
+            255
+        ],
+        "show_aircraft_type": false
+    },
     "web-ui-info": {
         "enabled": true,
         "display_duration": 10

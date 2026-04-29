@@ -26,6 +26,22 @@ curl -X POST http://your-pi-ip:5000/api/v3/plugins/install-from-url \
   -d '{"repo_url": "https://github.com/user/ledmatrix-plugin"}'
 ```
 
+You can also install from a GitHub folder URL inside a monorepo, for example:
+
+```bash
+curl -X POST http://your-pi-ip:5000/api/v3/plugins/install-from-url \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url": "https://github.com/ChuckBuilds/LEDMatrix/tree/main/plugin-repos/flightradar24"}'
+```
+
+Or pass the subdirectory explicitly:
+
+```bash
+curl -X POST http://your-pi-ip:5000/api/v3/plugins/install-from-url \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url": "https://github.com/ChuckBuilds/LEDMatrix", "plugin_path": "plugin-repos/flightradar24", "branch": "main"}'
+```
+
 ### Manage Plugins
 ```bash
 # List installed
@@ -104,6 +120,14 @@ Install any plugin directly from a GitHub repository, even if it's not in the of
 curl -X POST http://your-pi-ip:5000/api/v3/plugins/install-from-url \
   -H "Content-Type: application/json" \
   -d '{"repo_url": "https://github.com/user/ledmatrix-my-plugin"}'
+```
+
+For plugins stored inside a monorepo, either paste the GitHub folder URL directly or provide `plugin_path`:
+
+```bash
+curl -X POST http://your-pi-ip:5000/api/v3/plugins/install-from-url \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url": "https://github.com/ChuckBuilds/LEDMatrix/tree/main/plugin-repos/flightradar24"}'
 ```
 
 **Via Python:**

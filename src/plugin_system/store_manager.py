@@ -1171,11 +1171,14 @@ class PluginStoreManager:
         Returns:
             Dict with status and plugin_id or error message
         """
+        repo_url, plugin_path, branch = self._parse_github_install_target(
+            repo_url, plugin_path=plugin_path, branch=branch
+        )
         branch_info = f" (branch: {branch})" if branch else ""
-        self.logger.info(f"Installing plugin from custom URL: {repo_url}{branch_info}" + (f" (subpath: {plugin_path})" if plugin_path else ""))
-        
-        # Clean up URL (remove .git suffix if present)
-        repo_url = repo_url.rstrip('/').replace('.git', '')
+        self.logger.info(
+            f"Installing plugin from custom URL: {repo_url}{branch_info}"
+            + (f" (subpath: {plugin_path})" if plugin_path else "")
+        )
         
         temp_dir = None
         try:
@@ -1279,6 +1282,13 @@ class PluginStoreManager:
             temp_dir = None  # Prevent cleanup since we moved it
             
             # Note: plugin_id here is already from manifest (line 749), so directory name matches manifest ID
+            if plugin_path or not (final_path / ".git").exists():
+                self._write_install_metadata(final_path, {
+                    'install_type': 'github_url',
+                    'repo_url': repo_url,
+                    'plugin_path': plugin_path,
+                    'branch': branch_used or branch,
+                })
             
             # Install dependencies
             self._install_dependencies(final_path)
@@ -1443,6 +1453,41 @@ class PluginStoreManager:
         if url.endswith('.git'):
             url = url[:-4]
         return url.lower()
+
+    @staticmethod
+    def _parse_github_install_target(repo_url: str, plugin_path: Optional[str] = None,
+                                     branch: Optional[str] = None) -> Tuple[str, Optional[str], Optional[str]]:
+        """Normalize a GitHub install URL and extract optional tree path details."""
+        clean_url = repo_url.strip().rstrip('/')
+        if clean_url.endswith('.git'):
+            clean_url = clean_url[:-4]
+
+        if 'github.com' not in clean_url:
+            return clean_url, plugin_path, branch
+
+        parts = clean_url.split('/')
+        try:
+            github_index = parts.index('github.com')
+        except ValueError:
+            return clean_url, plugin_path, branch
+
+        if len(parts) <= github_index + 2:
+            return clean_url, plugin_path, branch
+
+        normalized_repo_url = '/'.join(parts[:github_index + 3])
+
+        if len(parts) > github_index + 4 and parts[github_index + 3] == 'tree':
+            url_branch = parts[github_index + 4]
+            url_plugin_path = '/'.join(parts[github_index + 5:]) or None
+            return normalized_repo_url, plugin_path or url_plugin_path, branch or url_branch
+
+        return normalized_repo_url, plugin_path, branch
+
+    def _write_install_metadata(self, plugin_dir: Path, metadata: Dict[str, Any]) -> None:
+        """Persist plugin source metadata used by future update operations."""
+        metadata_path = plugin_dir / ".plugin_metadata.json"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
 
     def _install_from_monorepo_api(self, repo_url: str, branch: str, plugin_subpath: str, target_path: Path) -> bool:
         """
@@ -2055,6 +2100,17 @@ class PluginStoreManager:
                     if metadata.get('install_type') == 'bundled':
                         self.logger.info(f"Plugin {plugin_id} is a bundled plugin; updates are delivered via LEDMatrix itself")
                         return True
+                    if metadata.get('install_type') == 'github_url' and metadata.get('repo_url'):
+                        self.logger.info(
+                            f"Plugin {plugin_id} was installed from GitHub URL; reinstalling from saved source metadata"
+                        )
+                        result = self.install_from_url(
+                            metadata['repo_url'],
+                            plugin_id=plugin_id,
+                            plugin_path=metadata.get('plugin_path'),
+                            branch=metadata.get('branch'),
+                        )
+                        return bool(result.get('success'))
                 except (OSError, ValueError) as e:
                     self.logger.debug(f"[PluginStore] Could not read metadata for {plugin_id} at {metadata_path}: {e}")
 
