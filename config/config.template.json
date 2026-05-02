@@ -137,6 +137,7 @@
         "lon": -116.31,
         "radius_km": 40,
         "cache_seconds": 30,
+        "full_endpoint_cache_seconds": 1800,
         "display_duration": 12,
         "primary_color": [
             255,

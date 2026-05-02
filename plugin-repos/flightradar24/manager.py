@@ -56,6 +56,10 @@ class FlightRadar24Plugin(BasePlugin):
         self.lon = float(self.config.get("lon", 0.0))
         self.radius_km = float(self.config.get("radius_km", 40))
         self.cache_seconds = max(10, int(self.config.get("cache_seconds", 30)))
+        self.full_endpoint_cache_seconds = max(
+            self.cache_seconds,
+            int(self.config.get("full_endpoint_cache_seconds", 1800)),
+        )
         self.display_duration = float(self.config.get("display_duration", 12))
         self.primary_color = self._normalize_color(self.config.get("primary_color"), (255, 255, 255))
         self.secondary_color = self._normalize_color(self.config.get("secondary_color"), (0, 255, 255))
@@ -90,6 +94,7 @@ class FlightRadar24Plugin(BasePlugin):
             f"{self.plugin_id}_{self.lat:.4f}_{self.lon:.4f}_"
             f"{self.radius_km:.1f}_{self.result_limit}"
         )
+        self.full_cache_key = f"{self.cache_key}_full"
 
     @staticmethod
     def _normalize_color(value: Any, fallback: Tuple[int, int, int]) -> Tuple[int, int, int]:
@@ -334,8 +339,12 @@ class FlightRadar24Plugin(BasePlugin):
             raw_flight.get("altitude_ft"),
             flight.get("altitude"),
         )
+        fr24_id = self._coerce_str(raw_flight.get("fr24_id"), raw_flight.get("id"))
+        hex_code = self._coerce_str(raw_flight.get("hex"), raw_flight.get("icao24"))
 
         return {
+            "fr24_id": fr24_id,
+            "hex": hex_code.upper(),
             "callsign": callsign,
             "origin": origin,
             "destination": destination,
@@ -358,14 +367,58 @@ class FlightRadar24Plugin(BasePlugin):
         )
         return radius * 2 * math.atan2(math.sqrt(a_val), math.sqrt(1 - a_val))
 
-    def _load_cached_flights(self, max_age: int) -> List[Dict[str, Any]]:
-        cached = self.cache_manager.get(self.cache_key, max_age=max_age)
+    def _load_cached_flights(self, max_age: int, cache_key: Optional[str] = None) -> List[Dict[str, Any]]:
+        cached = self.cache_manager.get(cache_key or self.cache_key, max_age=max_age)
         if isinstance(cached, list):
             return [item for item in cached if isinstance(item, dict)]
         return []
 
-    def _cache_flights(self, flights: List[Dict[str, Any]]) -> None:
-        self.cache_manager.set(self.cache_key, flights, ttl=self.cache_seconds)
+    def _cache_flights(
+        self,
+        flights: List[Dict[str, Any]],
+        ttl: Optional[int] = None,
+        cache_key: Optional[str] = None,
+    ) -> None:
+        self.cache_manager.set(cache_key or self.cache_key, flights, ttl=ttl or self.cache_seconds)
+
+    @staticmethod
+    def _flight_identity(flight: Dict[str, Any]) -> str:
+        return (
+            str(flight.get("fr24_id") or "").strip()
+            or str(flight.get("hex") or "").strip().upper()
+            or str(flight.get("callsign") or "").strip().upper()
+        )
+
+    def _merge_with_cached_full(self, flights: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        cached_full = self._load_cached_flights(
+            self.full_endpoint_cache_seconds,
+            cache_key=self.full_cache_key,
+        )
+        if not cached_full:
+            return flights
+
+        cached_by_id = {
+            self._flight_identity(flight): flight
+            for flight in cached_full
+            if self._flight_identity(flight)
+        }
+        merged: List[Dict[str, Any]] = []
+        for flight in flights:
+            identity = self._flight_identity(flight)
+            cached = cached_by_id.get(identity)
+            if not cached:
+                merged.append(flight)
+                continue
+            merged.append(
+                {
+                    **flight,
+                    "origin": cached.get("origin", flight.get("origin", "???")),
+                    "destination": cached.get("destination", flight.get("destination", "???")),
+                    "aircraft_type": cached.get("aircraft_type", flight.get("aircraft_type", "UNK")),
+                    "airline_code": cached.get("airline_code", flight.get("airline_code", "")),
+                }
+            )
+        return merged
 
     def _handle_http_error(self, response: Response) -> None:
         if response.status_code == 401:
@@ -388,6 +441,16 @@ class FlightRadar24Plugin(BasePlugin):
         last_error_response: Optional[Response] = None
 
         for endpoint_variant in self.endpoint_order:
+            if endpoint_variant == "full":
+                cached_full = self._load_cached_flights(
+                    self.full_endpoint_cache_seconds,
+                    cache_key=self.full_cache_key,
+                )
+                if cached_full:
+                    self.status_code = "ok"
+                    self.status_message = f"{len(cached_full)} nearby"
+                    return cached_full
+
             response = self.session.get(
                 f"{self.api_base_url}/live/flight-positions/{endpoint_variant}",
                 headers=self._request_headers(),
@@ -414,6 +477,14 @@ class FlightRadar24Plugin(BasePlugin):
                     parsed_flights.append(parsed)
 
             parsed_flights.sort(key=lambda item: item["distance_km"])
+            if endpoint_variant == "full" and parsed_flights:
+                self._cache_flights(
+                    parsed_flights,
+                    ttl=self.full_endpoint_cache_seconds,
+                    cache_key=self.full_cache_key,
+                )
+            elif endpoint_variant == "light" and parsed_flights:
+                parsed_flights = self._merge_with_cached_full(parsed_flights)
             if parsed_flights or endpoint_variant == self.endpoint_order[-1]:
                 return parsed_flights
 

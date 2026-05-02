@@ -445,6 +445,7 @@ class TestFlightRadar24Plugin(PluginTestBase):
             "lon": -116.3100,
             "radius_km": 40,
             "cache_seconds": 30,
+            "full_endpoint_cache_seconds": 1800,
             "display_duration": 12,
             "api_token": "demo-token",
         }
@@ -478,6 +479,105 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert calls[0].endswith("/live/flight-positions/full")
         assert plugin.current_flight["origin"] == "SFO"
         assert plugin.current_flight["destination"] == "LAX"
+
+    def test_reuses_cached_full_endpoint_results(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "full_endpoint_cache_seconds": 1800,
+            "display_duration": 12,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        self.mock_cache_manager._memory_cache.clear()
+        plugin.last_update = 0.0
+        cached_full = [
+            {
+                "fr24_id": "abc123",
+                "hex": "A1B2C3",
+                "callsign": "UAL123",
+                "origin": "SFO",
+                "destination": "LAX",
+                "distance_km": 12.3,
+                "aircraft_type": "B739",
+                "altitude_ft": 35000.0,
+                "airline_code": "UAL",
+            }
+        ]
+        plugin._cache_flights(
+            cached_full,
+            ttl=plugin.full_endpoint_cache_seconds,
+            cache_key=plugin.full_cache_key,
+        )
+        plugin.session.get = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("network should not be called when full cache is fresh")
+        )
+
+        plugin.update()
+
+        assert plugin.status_code == "ok"
+        assert plugin.current_flight["callsign"] == "UAL123"
+        assert plugin.current_flight["origin"] == "SFO"
+
+    def test_light_results_reuse_cached_full_route_data(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "full_endpoint_cache_seconds": 1800,
+            "display_duration": 12,
+            "endpoint_order": ["light"],
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        self.mock_cache_manager._memory_cache.clear()
+        plugin.last_update = 0.0
+        plugin._cache_flights(
+            [
+                {
+                    "fr24_id": "abc123",
+                    "hex": "A1B2C3",
+                    "callsign": "UAL123",
+                    "origin": "SFO",
+                    "destination": "LAX",
+                    "distance_km": 12.3,
+                    "aircraft_type": "B739",
+                    "altitude_ft": 35000.0,
+                    "airline_code": "UAL",
+                }
+            ],
+            ttl=plugin.full_endpoint_cache_seconds,
+            cache_key=plugin.full_cache_key,
+        )
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "data": [
+                    {
+                        "fr24_id": "abc123",
+                        "hex": "A1B2C3",
+                        "callsign": "UAL123",
+                        "alt": 36000,
+                        "lat": 33.7000,
+                        "lon": -116.3200,
+                    }
+                ]
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.status_code == "ok"
+        assert plugin.current_flight["origin"] == "SFO"
+        assert plugin.current_flight["destination"] == "LAX"
+        assert plugin.current_flight["aircraft_type"] == "B739"
 
     def test_falls_back_to_light_endpoint(self, plugin_id):
         config = {

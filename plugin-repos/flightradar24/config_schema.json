@@ -36,6 +36,13 @@
       "maximum": 3600,
       "description": "How long to reuse cached API data before refreshing."
     },
+    "full_endpoint_cache_seconds": {
+      "type": "integer",
+      "default": 1800,
+      "minimum": 30,
+      "maximum": 86400,
+      "description": "How long to reuse successful full-endpoint route data before calling the expensive full endpoint again."
+    },
     "display_duration": {
       "type": "number",
       "default": 12,
@@ -145,6 +152,7 @@
     "lon",
     "radius_km",
     "cache_seconds",
+    "full_endpoint_cache_seconds",
     "display_duration",
     "primary_color",
     "secondary_color",
