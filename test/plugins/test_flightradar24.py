@@ -305,21 +305,25 @@ class TestFlightRadar24Plugin(PluginTestBase):
         }
         plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
         plugin.current_flight = {"airline_code": "UAL"}
-        called: Dict[str, Any] = {}
+        calls = []
 
         def fake_load_logo(code, logo_path, max_width, max_height):
-            called["code"] = code
-            called["logo_path"] = logo_path
-            called["max_width"] = max_width
-            called["max_height"] = max_height
+            calls.append(
+                {
+                    "code": code,
+                    "logo_path": Path(logo_path),
+                    "max_width": max_width,
+                    "max_height": max_height,
+                }
+            )
             return None
 
         plugin.logo_helper.load_logo = fake_load_logo
         plugin._load_airline_logo(plugin.current_flight, plugin.display_manager.height)
 
-        assert called["code"] == "UAL"
-        assert called["logo_path"] == Path("assets/airline_logos/UAL.png")
-        assert called["max_width"] == 30
+        assert calls[0]["code"] == "UAL"
+        assert calls[0]["logo_path"] == Path("assets/airline_logos_led/UAL.png")
+        assert calls[0]["max_width"] == 30
 
     def test_smaller_logos_can_be_upscaled(self, plugin_id):
         config = {
@@ -344,6 +348,35 @@ class TestFlightRadar24Plugin(PluginTestBase):
         assert logo is not None
         assert logo.width > 20
         assert logo.height > 20
+
+    def test_logo_falls_back_to_original_directory(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 40,
+            "cache_seconds": 30,
+            "display_duration": 12,
+            "show_airline_logo": True,
+            "api_token": "demo-token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.current_flight = {"airline_code": "UAL"}
+        seen_paths = []
+
+        def fake_load_logo(_code, logo_path, max_width, max_height):
+            seen_paths.append(Path(logo_path))
+            if "airline_logos_led" in str(logo_path):
+                return None
+            return Image.new("RGBA", (16, 16), (255, 0, 0, 255))
+
+        plugin.logo_helper.load_logo = fake_load_logo
+        logo = plugin._load_airline_logo(plugin.current_flight, plugin.display_manager.height)
+
+        assert logo is not None
+        assert seen_paths[0] == Path("assets/airline_logos_led/UAL.png")
+        assert seen_paths[1] == Path("assets/airline_logos/UAL.png")
 
     def test_renders_airline_logo_when_available(self, plugin_id):
         display = _StubDisplayManager()

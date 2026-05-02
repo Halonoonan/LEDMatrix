@@ -67,8 +67,11 @@ class FlightRadar24Plugin(BasePlugin):
         self.logo_text_gap = max(1, min(12, int(self.config.get("logo_text_gap", 2))))
         self.logo_allow_upscale = bool(self.config.get("logo_allow_upscale", True))
         self.airline_logo_dir = Path(
-            str(self.config.get("airline_logo_dir", "assets/airline_logos"))
+            str(self.config.get("airline_logo_dir", "assets/airline_logos_led"))
         )
+        self.airline_logo_fallback_dirs = [
+            Path("assets/airline_logos"),
+        ]
         self.api_base_url = str(
             self.config.get("api_base_url", "https://fr24api.flightradar24.com/api")
         ).rstrip("/")
@@ -534,16 +537,22 @@ class FlightRadar24Plugin(BasePlugin):
             return None
         target_width = min(self.logo_max_width, max(12, self.display_manager.width // 3))
         target_height = max(10, display_height - 2)
-        logo_path = self.airline_logo_dir / f"{airline_code}.png"
-        logo = self.logo_helper.load_logo(
-            airline_code,
-            logo_path,
-            max_width=target_width,
-            max_height=target_height,
-        )
-        if logo is None or not self.logo_allow_upscale:
-            return logo
-        return self._upscale_logo(logo, target_width, target_height)
+        logo_paths = [self.airline_logo_dir / f"{airline_code}.png"]
+        logo_paths.extend(directory / f"{airline_code}.png" for directory in self.airline_logo_fallback_dirs)
+
+        for logo_path in logo_paths:
+            logo = self.logo_helper.load_logo(
+                airline_code,
+                logo_path,
+                max_width=target_width,
+                max_height=target_height,
+            )
+            if logo is None:
+                continue
+            if not self.logo_allow_upscale:
+                return logo
+            return self._upscale_logo(logo, target_width, target_height)
+        return None
 
     @staticmethod
     def _upscale_logo(logo: Image.Image, max_width: int, max_height: int) -> Image.Image:

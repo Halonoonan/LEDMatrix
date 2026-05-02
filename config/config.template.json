@@ -151,6 +151,7 @@
         "show_aircraft_type": false,
         "show_altitude": false,
         "show_airline_logo": true,
+        "airline_logo_dir": "assets/airline_logos_led",
         "font_size": 9,
         "logo_max_width": 34,
         "logo_text_gap": 2,
