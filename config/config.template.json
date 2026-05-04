@@ -158,6 +158,66 @@
         "logo_text_gap": 2,
         "logo_allow_upscale": true
     },
+    "piaware-local-flights": {
+        "enabled": false,
+        "lat": 33.6634,
+        "lon": -116.31,
+        "radius_km": 120,
+        "cache_seconds": 10,
+        "display_duration": 12,
+        "receiver_urls": [
+            "/run/readsb/aircraft.json",
+            "http://127.0.0.1:8080/data/aircraft.json",
+            "http://127.0.0.1/skyaware/data/aircraft.json"
+        ],
+        "request_timeout": 3,
+        "max_seen_seconds": 60,
+        "show_altitude": true,
+        "show_speed": true,
+        "show_airline_logo": true,
+        "airline_logo_dir": "assets/airline_logos_led",
+        "font_size": 9,
+        "logo_max_width": 40,
+        "logo_text_gap": 1,
+        "primary_color": [
+            255,
+            255,
+            255
+        ],
+        "secondary_color": [
+            0,
+            255,
+            255
+        ]
+    },
+    "trmnl-weather": {
+        "enabled": true,
+        "lat": 33.6634,
+        "lon": -116.31,
+        "location_name": "Local",
+        "temperature_unit": "fahrenheit",
+        "wind_unit": "mph",
+        "precipitation_unit": "inch",
+        "forecast_days": 4,
+        "display_duration": 15,
+        "cache_seconds": 900,
+        "request_timeout": 8,
+        "primary_color": [
+            255,
+            255,
+            255
+        ],
+        "secondary_color": [
+            135,
+            180,
+            255
+        ],
+        "accent_color": [
+            255,
+            210,
+            80
+        ]
+    },
     "web-ui-info": {
         "enabled": true,
         "display_duration": 10

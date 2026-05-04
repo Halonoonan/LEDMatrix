@@ -1,0 +1,160 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PiAware Local Flights Plugin Configuration",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable the local PiAware aircraft display."
+    },
+    "lat": {
+      "type": "number",
+      "default": 33.6634,
+      "minimum": -90,
+      "maximum": 90,
+      "description": "Home latitude used to calculate nearest aircraft."
+    },
+    "lon": {
+      "type": "number",
+      "default": -116.31,
+      "minimum": -180,
+      "maximum": 180,
+      "description": "Home longitude used to calculate nearest aircraft."
+    },
+    "radius_km": {
+      "type": "number",
+      "default": 120,
+      "minimum": 1,
+      "maximum": 500,
+      "description": "Only show aircraft within this radius."
+    },
+    "cache_seconds": {
+      "type": "integer",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 300,
+      "description": "How long to reuse the last local receiver payload."
+    },
+    "display_duration": {
+      "type": "number",
+      "default": 12,
+      "minimum": 1,
+      "maximum": 300,
+      "description": "How long to display the plugin in rotation."
+    },
+    "receiver_urls": {
+      "type": "array",
+      "default": [
+        "/run/readsb/aircraft.json",
+        "http://127.0.0.1:8080/data/aircraft.json",
+        "http://127.0.0.1/skyaware/data/aircraft.json"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Local receiver sources to try in order. Supports filesystem paths, file:// paths, and local HTTP URLs."
+    },
+    "request_timeout": {
+      "type": "integer",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 30,
+      "description": "Local receiver request timeout in seconds."
+    },
+    "max_seen_seconds": {
+      "type": "integer",
+      "default": 60,
+      "minimum": 1,
+      "maximum": 600,
+      "description": "Ignore aircraft whose position is older than this."
+    },
+    "show_altitude": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show altitude on the third line."
+    },
+    "show_speed": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show groundspeed on the third line when available."
+    },
+    "show_airline_logo": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show an airline logo when the callsign prefix matches a local logo."
+    },
+    "airline_logo_dir": {
+      "type": "string",
+      "default": "assets/airline_logos_led",
+      "description": "Primary directory for LED-optimized airline logos."
+    },
+    "font_size": {
+      "type": "integer",
+      "default": 9,
+      "minimum": 6,
+      "maximum": 14,
+      "description": "Text font size for the PiAware display."
+    },
+    "logo_max_width": {
+      "type": "integer",
+      "default": 40,
+      "minimum": 12,
+      "maximum": 64,
+      "description": "Maximum airline logo width in pixels."
+    },
+    "logo_text_gap": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "maximum": 12,
+      "description": "Gap in pixels between the logo and text."
+    },
+    "primary_color": {
+      "type": "array",
+      "default": [255, 255, 255],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "description": "Primary RGB text color."
+    },
+    "secondary_color": {
+      "type": "array",
+      "default": [0, 255, 255],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "description": "Secondary RGB text color."
+    }
+  },
+  "additionalProperties": false,
+  "x-propertyOrder": [
+    "enabled",
+    "lat",
+    "lon",
+    "radius_km",
+    "cache_seconds",
+    "display_duration",
+    "receiver_urls",
+    "request_timeout",
+    "max_seen_seconds",
+    "show_altitude",
+    "show_speed",
+    "show_airline_logo",
+    "airline_logo_dir",
+    "font_size",
+    "logo_max_width",
+    "logo_text_gap",
+    "primary_color",
+    "secondary_color"
+  ]
+}

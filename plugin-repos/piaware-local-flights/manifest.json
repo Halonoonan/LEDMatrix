@@ -1,0 +1,22 @@
+{
+  "id": "piaware-local-flights",
+  "name": "PiAware Local Flights",
+  "version": "1.0.0",
+  "author": "OpenAI",
+  "description": "Shows the nearest locally received aircraft from a PiAware or dump1090-fa receiver without using paid flight APIs.",
+  "entry_point": "manager.py",
+  "class_name": "PiAwareLocalFlightsPlugin",
+  "category": "aviation",
+  "tags": [
+    "piaware",
+    "dump1090",
+    "ads-b",
+    "flightaware",
+    "local"
+  ],
+  "display_modes": [
+    "piaware-local-flights"
+  ],
+  "update_interval": 10,
+  "default_duration": 12
+}
