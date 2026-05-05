@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +20,12 @@ from src.plugin_system.base_plugin import BasePlugin
 
 class PiAwareLocalFlightsPlugin(BasePlugin):
     """Display the nearest locally received aircraft from PiAware/dump1090."""
+
+    API_ENV_VARS = (
+        "LEDMATRIX_FLIGHTRADAR24_API_TOKEN",
+        "FR24_API_TOKEN",
+        "FR24_TOKEN",
+    )
 
     def __init__(
         self,
@@ -50,6 +57,18 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         self.radius_km = float(self.config.get("radius_km", 120))
         self.cache_seconds = max(1, int(self.config.get("cache_seconds", 10)))
         self.display_duration = float(self.config.get("display_duration", 12))
+        self.commercial_only = bool(self.config.get("commercial_only", False))
+        self.fr24_enrichment_enabled = bool(self.config.get("fr24_enrichment_enabled", False))
+        self.fr24_enrichment_cache_seconds = max(
+            self.cache_seconds,
+            int(self.config.get("fr24_enrichment_cache_seconds", 1800)),
+        )
+        self.fr24_request_timeout = max(3, int(self.config.get("fr24_request_timeout", 10)))
+        self.fr24_result_limit = max(1, min(100, int(self.config.get("fr24_result_limit", 50))))
+        self.fr24_api_base_url = str(
+            self.config.get("fr24_api_base_url", "https://fr24api.flightradar24.com/api")
+        ).rstrip("/")
+        self.fr24_api_token = self._resolve_fr24_api_token()
         self.receiver_urls = self._normalize_urls(
             self.config.get(
                 "receiver_urls",
@@ -75,6 +94,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         self.primary_color = self._normalize_color(self.config.get("primary_color"), (255, 255, 255))
         self.secondary_color = self._normalize_color(self.config.get("secondary_color"), (0, 255, 255))
         self.cache_key = f"{self.plugin_id}_{self.lat:.4f}_{self.lon:.4f}_{self.radius_km:.1f}"
+        self.fr24_enrichment_cache_key = f"{self.cache_key}_fr24_enrichment"
 
     @staticmethod
     def _normalize_urls(value: Any) -> List[str]:
@@ -93,6 +113,16 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             except (TypeError, ValueError):
                 return fallback
         return fallback
+
+    def _resolve_fr24_api_token(self) -> str:
+        token = str(self.config.get("fr24_api_token", "") or "").strip()
+        if token:
+            return token
+        for env_name in self.API_ENV_VARS:
+            env_value = os.getenv(env_name, "").strip()
+            if env_value:
+                return env_value
+        return ""
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
@@ -140,6 +170,51 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         return text[:3] if len(text) >= 2 else ""
 
     @staticmethod
+    def _looks_like_registration(value: str) -> bool:
+        text = "".join(char for char in str(value).upper().strip() if char.isalnum())
+        if not text:
+            return False
+        if text.startswith("N") and len(text) >= 4:
+            return True
+        if text.startswith(("C", "D", "F", "G", "VH", "ZS", "JA")) and len(text) >= 4:
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_commercial_callsign(value: str) -> bool:
+        text = "".join(char for char in str(value).upper().strip() if char.isalnum())
+        if len(text) < 4:
+            return False
+        prefix = text[:3]
+        suffix = text[3:]
+        return prefix.isalpha() and any(char.isdigit() for char in suffix)
+
+    def _is_commercial_aircraft(
+        self,
+        callsign: str,
+        registration: str,
+        aircraft_type: str,
+        airline_code: str,
+    ) -> bool:
+        if airline_code and self._looks_like_commercial_callsign(callsign):
+            return True
+        if self._looks_like_registration(callsign) or self._looks_like_registration(registration):
+            return False
+        if aircraft_type.upper().startswith("H"):
+            return False
+        return self._looks_like_commercial_callsign(callsign)
+
+    def _build_bounds(self) -> str:
+        lat_delta = self.radius_km / 111.32
+        cos_lat = math.cos(math.radians(self.lat))
+        lon_delta = self.radius_km / (111.32 * max(abs(cos_lat), 0.01))
+        north = min(90.0, self.lat + lat_delta)
+        south = max(-90.0, self.lat - lat_delta)
+        west = max(-180.0, self.lon - lon_delta)
+        east = min(180.0, self.lon + lon_delta)
+        return f"{north:.4f},{south:.4f},{west:.4f},{east:.4f}"
+
+    @staticmethod
     def _cardinal_from_bearing(bearing: Optional[float]) -> str:
         if bearing is None:
             return "?"
@@ -180,6 +255,26 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
     def _cache_flights(self, flights: List[Dict[str, Any]]) -> None:
         self.cache_manager.set(self.cache_key, flights, ttl=self.cache_seconds)
 
+    def _load_cached_enrichment(self, max_age: int) -> Dict[str, Dict[str, Any]]:
+        cached = self.cache_manager.get(self.fr24_enrichment_cache_key, max_age=max_age)
+        if isinstance(cached, dict):
+            return {str(key): value for key, value in cached.items() if isinstance(value, dict)}
+        return {}
+
+    def _cache_enrichment(self, enrichment: Dict[str, Dict[str, Any]]) -> None:
+        self.cache_manager.set(
+            self.fr24_enrichment_cache_key,
+            enrichment,
+            ttl=self.fr24_enrichment_cache_seconds,
+        )
+
+    @staticmethod
+    def _flight_identity(flight: Dict[str, Any]) -> str:
+        return (
+            str(flight.get("hex") or "").strip().upper()
+            or str(flight.get("callsign") or "").strip().upper()
+        )
+
     def _fetch_receiver_payload(self) -> Dict[str, Any]:
         last_exception: Optional[Exception] = None
         for source in self.receiver_urls:
@@ -205,6 +300,159 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         if not path.exists():
             raise requests.RequestException(f"receiver source not found: {path}")
         return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _extract_flights(payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        if isinstance(payload, dict):
+            for key in ("data", "flights", "items", "results"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
+            return [payload] if payload else []
+        return []
+
+    def _extract_airport_code(self, airport_data: Any) -> str:
+        if not isinstance(airport_data, dict):
+            return ""
+        code = airport_data.get("code") if isinstance(airport_data.get("code"), dict) else {}
+        return self._coerce_str(
+            airport_data.get("iata"),
+            airport_data.get("icao"),
+            code.get("iata"),
+            code.get("icao"),
+        )
+
+    def _parse_route(self, raw_flight: Dict[str, Any]) -> Tuple[str, str]:
+        route = raw_flight.get("route") if isinstance(raw_flight.get("route"), dict) else {}
+        airport = raw_flight.get("airport") if isinstance(raw_flight.get("airport"), dict) else {}
+        origin = route.get("origin") if isinstance(route.get("origin"), dict) else {}
+        destination = route.get("destination") if isinstance(route.get("destination"), dict) else {}
+        airport_origin = airport.get("origin") if isinstance(airport.get("origin"), dict) else {}
+        airport_destination = airport.get("destination") if isinstance(airport.get("destination"), dict) else {}
+        orig = self._coerce_str(
+            raw_flight.get("orig_iata"),
+            raw_flight.get("origin"),
+            route.get("origin"),
+            origin.get("iata"),
+            self._extract_airport_code(origin),
+            self._extract_airport_code(airport_origin),
+            fallback="",
+        )
+        dest = self._coerce_str(
+            raw_flight.get("dest_iata"),
+            raw_flight.get("destination"),
+            route.get("destination"),
+            destination.get("iata"),
+            self._extract_airport_code(destination),
+            self._extract_airport_code(airport_destination),
+            fallback="",
+        )
+        return orig, dest
+
+    def _fetch_fr24_enrichment(self) -> Dict[str, Dict[str, Any]]:
+        if not (self.fr24_enrichment_enabled and self.fr24_api_token):
+            return {}
+
+        response = self.session.get(
+            f"{self.fr24_api_base_url}/live/flight-positions/full",
+            headers={
+                "Authorization": f"Bearer {self.fr24_api_token}",
+                "Accept": "application/json",
+                "Accept-Version": "v1",
+                "User-Agent": "LEDMatrix/PiAwareLocalFlightsPlugin",
+            },
+            params={
+                "bounds": self._build_bounds(),
+                "limit": self.fr24_result_limit,
+            },
+            timeout=self.fr24_request_timeout,
+        )
+        response.raise_for_status()
+
+        enrichment: Dict[str, Dict[str, Any]] = {}
+        for raw_flight in self._extract_flights(response.json()):
+            hex_code = self._coerce_str(raw_flight.get("hex"), raw_flight.get("icao24")).upper()
+            callsign = self._coerce_str(
+                raw_flight.get("callsign"),
+                raw_flight.get("flight"),
+                fallback="",
+            ).upper()
+            origin, destination = self._parse_route(raw_flight)
+            aircraft = raw_flight.get("aircraft") if isinstance(raw_flight.get("aircraft"), dict) else {}
+            aircraft_model = aircraft.get("model") if isinstance(aircraft.get("model"), dict) else {}
+            aircraft_type = self._coerce_str(
+                raw_flight.get("type"),
+                raw_flight.get("aircraft_type"),
+                aircraft.get("type"),
+                aircraft.get("code"),
+                aircraft_model.get("code"),
+                fallback="",
+            )
+            airline_code = self._normalize_airline_code(
+                self._coerce_str(
+                    raw_flight.get("airline_icao"),
+                    raw_flight.get("operator_icao"),
+                    callsign[:3] if callsign else "",
+                )
+            )
+            enriched = {
+                "origin": origin,
+                "destination": destination,
+                "aircraft_type": aircraft_type,
+                "airline_code": airline_code,
+            }
+            if hex_code:
+                enrichment[hex_code] = enriched
+            if callsign:
+                enrichment[callsign] = enriched
+        return enrichment
+
+    def _apply_fr24_enrichment(self, aircraft: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not aircraft:
+            return aircraft
+        if not self.fr24_enrichment_enabled:
+            return aircraft
+
+        enrichment = self._load_cached_enrichment(self.fr24_enrichment_cache_seconds)
+        if not enrichment and self.fr24_api_token:
+            try:
+                enrichment = self._fetch_fr24_enrichment()
+                if enrichment:
+                    self._cache_enrichment(enrichment)
+            except requests.RequestException as exc:
+                self.logger.warning("FR24 enrichment request failed: %s", exc)
+            except ValueError as exc:
+                self.logger.warning("FR24 enrichment parse failed: %s", exc)
+
+        if not enrichment:
+            return aircraft
+
+        enriched_aircraft: List[Dict[str, Any]] = []
+        for flight in aircraft:
+            identity_candidates = [
+                str(flight.get("hex") or "").strip().upper(),
+                str(flight.get("callsign") or "").strip().upper(),
+            ]
+            match = None
+            for identity in identity_candidates:
+                if identity and identity in enrichment:
+                    match = enrichment[identity]
+                    break
+            if not match:
+                enriched_aircraft.append(flight)
+                continue
+            enriched_aircraft.append(
+                {
+                    **flight,
+                    "origin": match.get("origin", flight.get("origin", "")),
+                    "destination": match.get("destination", flight.get("destination", "")),
+                    "aircraft_type": match.get("aircraft_type") or flight.get("aircraft_type", "UNK"),
+                    "airline_code": match.get("airline_code") or flight.get("airline_code", ""),
+                }
+            )
+        return enriched_aircraft
 
     def _parse_aircraft(self, raw_aircraft: Dict[str, Any], now_ts: Optional[float]) -> Optional[Dict[str, Any]]:
         latitude = self._coerce_float(raw_aircraft.get("lat"))
@@ -236,6 +484,15 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         groundspeed = self._coerce_float(raw_aircraft.get("gs"), raw_aircraft.get("speed"))
         airline_code = self._normalize_airline_code(callsign[:3])
         bearing_home = self._bearing_from_home(latitude, longitude)
+        is_commercial = self._is_commercial_aircraft(
+            callsign,
+            registration,
+            aircraft_type,
+            airline_code,
+        )
+
+        if self.commercial_only and not is_commercial:
+            return None
 
         return {
             "hex": hex_code,
@@ -248,6 +505,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             "bearing_home": bearing_home,
             "direction_home": self._cardinal_from_bearing(bearing_home),
             "airline_code": airline_code,
+            "is_commercial": is_commercial,
         }
 
     def _extract_aircraft(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -301,6 +559,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             return
 
         aircraft = self._extract_aircraft(payload)
+        aircraft = self._apply_fr24_enrichment(aircraft)
         self.current_aircraft = aircraft
         self.current_flight = aircraft[0] if aircraft else None
         if aircraft:
@@ -309,7 +568,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             self.status_message = f"{len(aircraft)} nearby"
         else:
             self.status_code = "empty"
-            self.status_message = "No aircraft"
+            self.status_message = "No airline" if self.commercial_only else "No aircraft"
 
     def _load_font(self, preferred_size: Optional[int] = None) -> ImageFont.ImageFont:
         preferred_size = preferred_size or self.font_size
@@ -353,6 +612,10 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         return text[:limit] if len(text) > limit else text
 
     def _route_like_text(self, flight: Dict[str, Any]) -> str:
+        origin = self._coerce_str(flight.get("origin"))
+        destination = self._coerce_str(flight.get("destination"))
+        if origin and destination:
+            return f"{origin}->{destination}"
         direction = flight.get("direction_home", "?")
         distance = int(round(flight.get("distance_km", 0.0)))
         return f"{direction} {distance}km"

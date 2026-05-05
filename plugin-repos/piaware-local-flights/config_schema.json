@@ -36,6 +36,28 @@
       "maximum": 300,
       "description": "How long to reuse the last local receiver payload."
     },
+    "commercial_only": {
+      "type": "boolean",
+      "default": false,
+      "description": "Only display aircraft that look like commercial airline flights."
+    },
+    "fr24_enrichment_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Optionally enrich local ADS-B aircraft with cached FR24 route data when available."
+    },
+    "fr24_enrichment_cache_seconds": {
+      "type": "integer",
+      "default": 1800,
+      "minimum": 30,
+      "maximum": 86400,
+      "description": "How long to reuse successful FR24 route enrichment data before calling the API again."
+    },
+    "fr24_api_token": {
+      "type": "string",
+      "default": "",
+      "description": "Optional FR24 API token for occasional route enrichment."
+    },
     "display_duration": {
       "type": "number",
       "default": 12,
@@ -143,6 +165,10 @@
     "lon",
     "radius_km",
     "cache_seconds",
+    "commercial_only",
+    "fr24_enrichment_enabled",
+    "fr24_enrichment_cache_seconds",
+    "fr24_api_token",
     "display_duration",
     "receiver_urls",
     "request_timeout",

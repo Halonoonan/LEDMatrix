@@ -164,6 +164,9 @@
         "lon": -116.31,
         "radius_km": 120,
         "cache_seconds": 10,
+        "commercial_only": false,
+        "fr24_enrichment_enabled": false,
+        "fr24_enrichment_cache_seconds": 1800,
         "display_duration": 12,
         "receiver_urls": [
             "/run/readsb/aircraft.json",

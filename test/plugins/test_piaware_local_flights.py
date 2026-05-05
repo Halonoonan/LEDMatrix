@@ -145,6 +145,98 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
         assert plugin.current_flight["altitude_ft"] == 35000.0
         assert any(pixel != (0, 0, 0) for pixel in display.image.getdata())
 
+    def test_route_text_uses_enriched_origin_destination_when_available(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        text = plugin._route_like_text(
+            {
+                "origin": "LAX",
+                "destination": "ORD",
+                "direction_home": "NE",
+                "distance_km": 12.0,
+            }
+        )
+
+        assert text == "LAX->ORD"
+
+    def test_route_text_falls_back_without_enrichment(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        text = plugin._route_like_text(
+            {
+                "direction_home": "NE",
+                "distance_km": 12.0,
+            }
+        )
+
+        assert text == "NE 12km"
+
+    def test_commercial_only_filters_private_aircraft(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+            "commercial_only": True,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "now": 1000,
+                "aircraft": [
+                    {"hex": "ABC123", "flight": "N123AB", "r": "N123AB", "lat": 33.70, "lon": -116.32, "seen": 2},
+                    {"hex": "A1B2C3", "flight": "UAL123", "lat": 33.71, "lon": -116.31, "alt_baro": 35000, "gs": 420, "seen": 2},
+                ],
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.status_code == "ok"
+        assert len(plugin.current_aircraft) == 1
+        assert plugin.current_flight["callsign"] == "UAL123"
+
+    def test_commercial_only_empty_message(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+            "commercial_only": True,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "now": 1000,
+                "aircraft": [
+                    {"hex": "ABC123", "flight": "N123AB", "r": "N123AB", "lat": 33.70, "lon": -116.32, "seen": 2},
+                ],
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.status_code == "empty"
+        assert plugin.status_message == "No airline"
+
     def test_reads_local_receiver_json_file(self, plugin_id):
         config = {
             **self.base_config,
@@ -226,6 +318,45 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
 
         assert plugin.status_code == "receiver_error"
         assert plugin.current_flight["callsign"] == "UAL123"
+
+    def test_cached_fr24_enrichment_is_applied(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+            "fr24_enrichment_enabled": True,
+            "fr24_enrichment_cache_seconds": 1800,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.cache_manager.set(
+            plugin.fr24_enrichment_cache_key,
+            {
+                "A1B2C3": {
+                    "origin": "LAX",
+                    "destination": "ORD",
+                    "aircraft_type": "A319",
+                    "airline_code": "UAL",
+                }
+            },
+            ttl=plugin.fr24_enrichment_cache_seconds,
+        )
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "now": 1000,
+                "aircraft": [
+                    {"hex": "A1B2C3", "flight": "UAL123", "lat": 33.70, "lon": -116.32, "alt_baro": 35000, "gs": 420, "seen": 2}
+                ],
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.current_flight["origin"] == "LAX"
+        assert plugin.current_flight["destination"] == "ORD"
+        assert plugin.current_flight["aircraft_type"] == "A319"
 
     def test_logo_uses_led_directory_first(self, plugin_id):
         config = {
