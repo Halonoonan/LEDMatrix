@@ -175,7 +175,7 @@
         "show_altitude": true,
         "show_speed": true,
         "show_airline_logo": true,
-        "airline_logo_dir": "assets/airline_logos_led",
+        "airline_logo_dir": "assets/airline_logos_piaware",
         "font_size": 9,
         "logo_max_width": 40,
         "logo_text_gap": 1,

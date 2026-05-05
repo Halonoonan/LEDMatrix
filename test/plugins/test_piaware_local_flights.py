@@ -246,4 +246,4 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
         plugin.logo_helper.load_logo = fake_load_logo
         plugin._load_airline_logo(plugin.current_flight, plugin.display_manager.height)
 
-        assert seen_paths[0] == Path("assets/airline_logos_led/UAL.png")
+        assert seen_paths[0] == Path("assets/airline_logos_piaware/UAL.png")

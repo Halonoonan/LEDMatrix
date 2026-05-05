@@ -66,9 +66,9 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         self.show_speed = bool(self.config.get("show_speed", True))
         self.show_airline_logo = bool(self.config.get("show_airline_logo", True))
         self.airline_logo_dir = Path(
-            str(self.config.get("airline_logo_dir", "assets/airline_logos_led"))
+            str(self.config.get("airline_logo_dir", "assets/airline_logos_piaware"))
         )
-        self.airline_logo_fallback_dirs = [Path("assets/airline_logos")]
+        self.airline_logo_fallback_dirs = [Path("assets/airline_logos_led"), Path("assets/airline_logos")]
         self.font_size = max(6, min(14, int(self.config.get("font_size", 9))))
         self.logo_max_width = max(12, min(64, int(self.config.get("logo_max_width", 40))))
         self.logo_text_gap = max(1, min(12, int(self.config.get("logo_text_gap", 1))))

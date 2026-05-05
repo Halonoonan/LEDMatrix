@@ -87,8 +87,8 @@
     },
     "airline_logo_dir": {
       "type": "string",
-      "default": "assets/airline_logos_led",
-      "description": "Primary directory for LED-optimized airline logos."
+      "default": "assets/airline_logos_piaware",
+      "description": "Primary directory for PiAware airline logos."
     },
     "font_size": {
       "type": "integer",
