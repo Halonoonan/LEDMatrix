@@ -14,6 +14,11 @@ from PIL import Image, ImageDraw, ImageFont
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+try:
+    from FlightRadar24.api import FlightRadar24API
+except ImportError:
+    FlightRadar24API = None
+
 from src.common.logo_helper import LogoHelper
 from src.plugin_system.base_plugin import BasePlugin
 
@@ -63,12 +68,19 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             self.cache_seconds,
             int(self.config.get("fr24_enrichment_cache_seconds", 1800)),
         )
+        self.fr24_unofficial_fallback_enabled = bool(
+            self.config.get("fr24_unofficial_fallback_enabled", False)
+        )
+        self.fr24_unofficial_detail_limit = max(
+            1, min(10, int(self.config.get("fr24_unofficial_detail_limit", 3)))
+        )
         self.fr24_request_timeout = max(3, int(self.config.get("fr24_request_timeout", 10)))
         self.fr24_result_limit = max(1, min(100, int(self.config.get("fr24_result_limit", 50))))
         self.fr24_api_base_url = str(
             self.config.get("fr24_api_base_url", "https://fr24api.flightradar24.com/api")
         ).rstrip("/")
         self.fr24_api_token = self._resolve_fr24_api_token()
+        self.unofficial_fr24_client = self._build_unofficial_fr24_client()
         self.receiver_urls = self._normalize_urls(
             self.config.get(
                 "receiver_urls",
@@ -138,6 +150,15 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+    @staticmethod
+    def _build_unofficial_fr24_client() -> Any:
+        if FlightRadar24API is None:
+            return None
+        try:
+            return FlightRadar24API()
+        except Exception:
+            return None
 
     @staticmethod
     def _coerce_float(*values: Any) -> Optional[float]:
@@ -409,6 +430,124 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
                 enrichment[callsign] = enriched
         return enrichment
 
+    def _fetch_fr24_unofficial_enrichment(
+        self, aircraft: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        if not (
+            self.fr24_enrichment_enabled
+            and self.fr24_unofficial_fallback_enabled
+            and self.unofficial_fr24_client is not None
+            and aircraft
+        ):
+            return {}
+
+        try:
+            flights = self.unofficial_fr24_client.get_flights(bounds=self._build_bounds())
+        except Exception as exc:
+            self.logger.warning("Unofficial FR24 flight list failed: %s", exc)
+            return {}
+
+        local_by_hex: Dict[str, Dict[str, Any]] = {}
+        local_by_callsign: Dict[str, Dict[str, Any]] = {}
+        for flight in aircraft:
+            hex_code = self._coerce_str(flight.get("hex")).upper()
+            callsign = self._coerce_str(flight.get("callsign")).upper()
+            if hex_code:
+                local_by_hex[hex_code] = flight
+            if callsign:
+                local_by_callsign[callsign] = flight
+
+        matched: List[Tuple[Any, Dict[str, Any]]] = []
+        for remote_flight in flights or []:
+            hex_code = self._coerce_str(
+                getattr(remote_flight, "icao_24bit", ""),
+                getattr(remote_flight, "hex", ""),
+            ).upper()
+            callsign = self._coerce_str(
+                getattr(remote_flight, "callsign", ""),
+                getattr(remote_flight, "flight_number", ""),
+            ).upper()
+            local_match = None
+            if hex_code and hex_code in local_by_hex:
+                local_match = local_by_hex[hex_code]
+            elif callsign and callsign in local_by_callsign:
+                local_match = local_by_callsign[callsign]
+            if local_match is not None:
+                matched.append((remote_flight, local_match))
+
+        matched.sort(key=lambda item: item[1].get("distance_km", float("inf")))
+        enrichment: Dict[str, Dict[str, Any]] = {}
+        for remote_flight, local_match in matched[: self.fr24_unofficial_detail_limit]:
+            try:
+                details = self.unofficial_fr24_client.get_flight_details(remote_flight)
+            except Exception as exc:
+                self.logger.warning("Unofficial FR24 detail lookup failed: %s", exc)
+                continue
+
+            if not isinstance(details, dict):
+                continue
+
+            callsign = self._coerce_str(
+                details.get("callsign"),
+                details.get("flight"),
+                getattr(remote_flight, "callsign", ""),
+                getattr(remote_flight, "flight_number", ""),
+            ).upper()
+            hex_code = self._coerce_str(
+                details.get("hex"),
+                details.get("icao24"),
+                getattr(remote_flight, "icao_24bit", ""),
+                getattr(remote_flight, "hex", ""),
+                local_match.get("hex"),
+            ).upper()
+            origin, destination = self._parse_route(details)
+            if not (origin and destination):
+                airport = details.get("airport") if isinstance(details.get("airport"), dict) else {}
+                plugin_data = details.get("pluginData") if isinstance(details.get("pluginData"), dict) else {}
+                schedule = plugin_data.get("schedule") if isinstance(plugin_data.get("schedule"), dict) else {}
+                flight_plan = plugin_data.get("flight_plan") if isinstance(plugin_data.get("flight_plan"), dict) else {}
+                origin = self._coerce_str(
+                    origin,
+                    airport.get("origin", {}).get("code", {}).get("iata") if isinstance(airport.get("origin"), dict) else "",
+                    schedule.get("origin"),
+                    flight_plan.get("origin"),
+                    fallback="",
+                )
+                destination = self._coerce_str(
+                    destination,
+                    airport.get("destination", {}).get("code", {}).get("iata") if isinstance(airport.get("destination"), dict) else "",
+                    schedule.get("destination"),
+                    flight_plan.get("destination"),
+                    fallback="",
+                )
+
+            airline_code = self._normalize_airline_code(
+                self._coerce_str(
+                    details.get("airline_icao"),
+                    details.get("operator_icao"),
+                    local_match.get("airline_code"),
+                    callsign[:3] if callsign else "",
+                )
+            )
+            aircraft_type = self._coerce_str(
+                details.get("type"),
+                details.get("aircraft_type"),
+                details.get("aircraft_code"),
+                local_match.get("aircraft_type"),
+                fallback="",
+            )
+            enriched = {
+                "origin": origin,
+                "destination": destination,
+                "aircraft_type": aircraft_type,
+                "airline_code": airline_code,
+            }
+            if hex_code:
+                enrichment[hex_code] = enriched
+            if callsign:
+                enrichment[callsign] = enriched
+        return enrichment
+
     def _apply_fr24_enrichment(self, aircraft: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not aircraft:
             return aircraft
@@ -416,15 +555,27 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             return aircraft
 
         enrichment = self._load_cached_enrichment(self.fr24_enrichment_cache_seconds)
-        if not enrichment and self.fr24_api_token:
-            try:
-                enrichment = self._fetch_fr24_enrichment()
-                if enrichment:
-                    self._cache_enrichment(enrichment)
-            except requests.RequestException as exc:
-                self.logger.warning("FR24 enrichment request failed: %s", exc)
-            except ValueError as exc:
-                self.logger.warning("FR24 enrichment parse failed: %s", exc)
+        if not enrichment:
+            official_failed = False
+            if self.fr24_api_token:
+                try:
+                    enrichment = self._fetch_fr24_enrichment()
+                except requests.RequestException as exc:
+                    official_failed = True
+                    self.logger.warning("FR24 enrichment request failed: %s", exc)
+                except ValueError as exc:
+                    official_failed = True
+                    self.logger.warning("FR24 enrichment parse failed: %s", exc)
+
+            if (
+                not enrichment
+                and self.fr24_unofficial_fallback_enabled
+                and (official_failed or not self.fr24_api_token)
+            ):
+                enrichment = self._fetch_fr24_unofficial_enrichment(aircraft)
+
+            if enrichment:
+                self._cache_enrichment(enrichment)
 
         if not enrichment:
             return aircraft

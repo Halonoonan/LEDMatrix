@@ -167,6 +167,8 @@
         "commercial_only": false,
         "fr24_enrichment_enabled": false,
         "fr24_enrichment_cache_seconds": 1800,
+        "fr24_unofficial_fallback_enabled": false,
+        "fr24_unofficial_detail_limit": 3,
         "display_duration": 12,
         "receiver_urls": [
             "/run/readsb/aircraft.json",

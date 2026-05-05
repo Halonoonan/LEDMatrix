@@ -58,6 +58,24 @@ class _FakeResponse:
         return self._payload
 
 
+class _FakeUnofficialFlight:
+    def __init__(self, hex_code: str, callsign: str) -> None:
+        self.icao_24bit = hex_code
+        self.callsign = callsign
+
+
+class _FakeUnofficialClient:
+    def __init__(self, flights: list[_FakeUnofficialFlight], details_by_hex: Dict[str, Dict[str, Any]]) -> None:
+        self._flights = flights
+        self._details_by_hex = details_by_hex
+
+    def get_flights(self, bounds: str):
+        return self._flights
+
+    def get_flight_details(self, flight: _FakeUnofficialFlight):
+        return self._details_by_hex.get(flight.icao_24bit, {})
+
+
 class TestPiAwareLocalFlightsPlugin(PluginTestBase):
     @pytest.fixture
     def plugin_id(self):
@@ -318,6 +336,101 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
 
         assert plugin.status_code == "receiver_error"
         assert plugin.current_flight["callsign"] == "UAL123"
+
+    def test_unofficial_fr24_fallback_enriches_route_after_official_failure(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+            "commercial_only": True,
+            "fr24_enrichment_enabled": True,
+            "fr24_unofficial_fallback_enabled": True,
+            "fr24_api_token": "token",
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        receiver_payload = {
+            "now": 1000,
+            "aircraft": [
+                {
+                    "hex": "A1B2C3",
+                    "flight": "UAL123",
+                    "lat": 33.70,
+                    "lon": -116.32,
+                    "alt_baro": 35000,
+                    "gs": 420,
+                    "seen": 2,
+                }
+            ],
+        }
+
+        def fake_get(url, *args, **kwargs):
+            if "flight-positions/full" in url:
+                raise requests.HTTPError("HTTP 402")
+            return _FakeResponse(200, receiver_payload)
+
+        plugin.session.get = fake_get
+        plugin.unofficial_fr24_client = _FakeUnofficialClient(
+            [_FakeUnofficialFlight("A1B2C3", "UAL123")],
+            {
+                "A1B2C3": {
+                    "airport": {
+                        "origin": {"code": {"iata": "LAX"}},
+                        "destination": {"code": {"iata": "ORD"}},
+                    },
+                    "aircraft_type": "A319",
+                    "airline_icao": "UAL",
+                }
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.current_flight is not None
+        assert plugin.current_flight["origin"] == "LAX"
+        assert plugin.current_flight["destination"] == "ORD"
+        assert plugin._route_like_text(plugin.current_flight) == "LAX->ORD"
+
+    def test_unofficial_fallback_without_token_can_still_enrich(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+            "commercial_only": True,
+            "fr24_enrichment_enabled": True,
+            "fr24_unofficial_fallback_enabled": True,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+        plugin.unofficial_fr24_client = _FakeUnofficialClient(
+            [_FakeUnofficialFlight("A1B2C3", "UAL123")],
+            {
+                "A1B2C3": {
+                    "airport": {
+                        "origin": {"code": {"iata": "SAN"}},
+                        "destination": {"code": {"iata": "SFO"}},
+                    }
+                }
+            },
+        )
+        plugin.session.get = lambda *args, **kwargs: _FakeResponse(
+            200,
+            {
+                "now": 1000,
+                "aircraft": [
+                    {"hex": "A1B2C3", "flight": "UAL123", "lat": 33.70, "lon": -116.32, "seen": 2},
+                ],
+            },
+        )
+
+        plugin.update()
+
+        assert plugin.current_flight is not None
+        assert plugin.current_flight["origin"] == "SAN"
+        assert plugin.current_flight["destination"] == "SFO"
 
     def test_cached_fr24_enrichment_is_applied(self, plugin_id):
         config = {

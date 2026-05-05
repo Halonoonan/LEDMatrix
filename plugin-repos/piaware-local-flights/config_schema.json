@@ -53,6 +53,18 @@
       "maximum": 86400,
       "description": "How long to reuse successful FR24 route enrichment data before calling the API again."
     },
+    "fr24_unofficial_fallback_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Use the unofficial FlightRadar24API package as a backup enrichment source when the official FR24 API is unavailable or out of credits."
+    },
+    "fr24_unofficial_detail_limit": {
+      "type": "integer",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Maximum number of nearby commercial flights to enrich with the unofficial FR24 backup on each refresh."
+    },
     "fr24_api_token": {
       "type": "string",
       "default": "",
@@ -168,6 +180,8 @@
     "commercial_only",
     "fr24_enrichment_enabled",
     "fr24_enrichment_cache_seconds",
+    "fr24_unofficial_fallback_enabled",
+    "fr24_unofficial_detail_limit",
     "fr24_api_token",
     "display_duration",
     "receiver_urls",
