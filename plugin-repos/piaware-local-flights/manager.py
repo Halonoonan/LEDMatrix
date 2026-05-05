@@ -372,6 +372,19 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         )
         return orig, dest
 
+    def _parse_airline_name(self, raw_flight: Dict[str, Any]) -> str:
+        airline = raw_flight.get("airline") if isinstance(raw_flight.get("airline"), dict) else {}
+        operator = raw_flight.get("operator") if isinstance(raw_flight.get("operator"), dict) else {}
+        owner = raw_flight.get("owner") if isinstance(raw_flight.get("owner"), dict) else {}
+        return self._coerce_str(
+            raw_flight.get("airline_name"),
+            raw_flight.get("operator_name"),
+            airline.get("name"),
+            operator.get("name"),
+            owner.get("name"),
+            fallback="",
+        )
+
     def _fetch_fr24_enrichment(self) -> Dict[str, Dict[str, Any]]:
         if not (self.fr24_enrichment_enabled and self.fr24_api_token):
             return {}
@@ -418,11 +431,13 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
                     callsign[:3] if callsign else "",
                 )
             )
+            airline_name = self._parse_airline_name(raw_flight)
             enriched = {
                 "origin": origin,
                 "destination": destination,
                 "aircraft_type": aircraft_type,
                 "airline_code": airline_code,
+                "airline_name": airline_name,
             }
             if hex_code:
                 enrichment[hex_code] = enriched
@@ -529,6 +544,14 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
                     callsign[:3] if callsign else "",
                 )
             )
+            airline_name = self._coerce_str(
+                details.get("airline_name"),
+                details.get("operator_name"),
+                details.get("airline"),
+                details.get("operator"),
+                local_match.get("airline_name"),
+                fallback="",
+            )
             aircraft_type = self._coerce_str(
                 details.get("type"),
                 details.get("aircraft_type"),
@@ -541,6 +564,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
                 "destination": destination,
                 "aircraft_type": aircraft_type,
                 "airline_code": airline_code,
+                "airline_name": airline_name,
             }
             if hex_code:
                 enrichment[hex_code] = enriched
@@ -601,6 +625,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
                     "destination": match.get("destination", flight.get("destination", "")),
                     "aircraft_type": match.get("aircraft_type") or flight.get("aircraft_type", "UNK"),
                     "airline_code": match.get("airline_code") or flight.get("airline_code", ""),
+                    "airline_name": match.get("airline_name") or flight.get("airline_name", ""),
                 }
             )
         return enriched_aircraft
@@ -656,6 +681,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             "bearing_home": bearing_home,
             "direction_home": self._cardinal_from_bearing(bearing_home),
             "airline_code": airline_code,
+            "airline_name": "",
             "is_commercial": is_commercial,
         }
 
@@ -766,12 +792,27 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         origin = self._coerce_str(flight.get("origin"))
         destination = self._coerce_str(flight.get("destination"))
         if origin and destination:
-            return f"{origin}->{destination}"
+            return f"{origin}-{destination}"
         direction = flight.get("direction_home", "?")
         distance = int(round(flight.get("distance_km", 0.0)))
         return f"{direction} {distance}km"
 
+    def _title_text(self, flight: Dict[str, Any]) -> str:
+        airline_name = self._coerce_str(flight.get("airline_name"))
+        if airline_name:
+            return airline_name
+        airline_code = self._coerce_str(flight.get("airline_code"))
+        if airline_code:
+            return airline_code
+        return self._coerce_str(flight.get("callsign"), fallback="ADS-B")
+
     def _detail_text(self, flight: Dict[str, Any]) -> str:
+        aircraft_type = self._coerce_str(flight.get("aircraft_type"))
+        registration = self._coerce_str(flight.get("registration"))
+        if aircraft_type and aircraft_type != "UNK":
+            return aircraft_type
+        if registration:
+            return registration
         parts: List[str] = []
         if self.show_altitude and isinstance(flight.get("altitude_ft"), (int, float)):
             parts.append(f"{int(round(flight['altitude_ft']))}ft")
@@ -779,7 +820,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             parts.append(f"{int(round(flight['groundspeed_kt']))}kt")
         if parts:
             return " ".join(parts)
-        return self._coerce_str(flight.get("registration"), flight.get("aircraft_type"), fallback="ADS-B")
+        return self._coerce_str(flight.get("callsign"), fallback="ADS-B")
 
     def _draw_lines(
         self,
@@ -830,7 +871,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
 
         if self.current_flight:
             lines: List[Tuple[str, Tuple[int, int, int]]] = [
-                (self._truncate(self.current_flight["callsign"], 10), self.primary_color),
+                (self._truncate(self._title_text(self.current_flight), 12), self.primary_color),
                 (self._truncate(self._route_like_text(self.current_flight), 14), self.secondary_color),
             ]
             if can_show_three_lines:

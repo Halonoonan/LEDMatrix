@@ -182,7 +182,7 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
             }
         )
 
-        assert text == "LAX->ORD"
+        assert text == "LAX-ORD"
 
     def test_route_text_falls_back_without_enrichment(self, plugin_id):
         config = {
@@ -381,6 +381,7 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
                         "destination": {"code": {"iata": "ORD"}},
                     },
                     "aircraft_type": "A319",
+                    "airline_name": "United",
                     "airline_icao": "UAL",
                 }
             },
@@ -391,7 +392,21 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
         assert plugin.current_flight is not None
         assert plugin.current_flight["origin"] == "LAX"
         assert plugin.current_flight["destination"] == "ORD"
-        assert plugin._route_like_text(plugin.current_flight) == "LAX->ORD"
+        assert plugin.current_flight["airline_name"] == "United"
+        assert plugin._title_text(plugin.current_flight) == "United"
+        assert plugin._route_like_text(plugin.current_flight) == "LAX-ORD"
+
+    def test_detail_text_prefers_aircraft_type(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        assert plugin._detail_text({"aircraft_type": "A321neo", "altitude_ft": 35000}) == "A321neo"
 
     def test_unofficial_fallback_without_token_can_still_enrich(self, plugin_id):
         config = {
