@@ -31,6 +31,26 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
         "FR24_API_TOKEN",
         "FR24_TOKEN",
     )
+    AIRLINE_NAME_BY_CODE = {
+        "AAL": "American",
+        "UAL": "United",
+        "DAL": "Delta",
+        "SWA": "Southwest",
+        "ASA": "Alaska",
+        "JBU": "JetBlue",
+        "FFT": "Frontier",
+        "NKS": "Spirit",
+        "SKW": "SkyWest",
+        "ENY": "Envoy",
+        "JIA": "PSA",
+        "RPA": "Republic",
+        "ACA": "Air Canada",
+        "WJA": "WestJet",
+        "BAW": "British",
+        "AFR": "Air France",
+        "KLM": "KLM",
+        "DLH": "Lufthansa",
+    }
 
     def __init__(
         self,
@@ -803,7 +823,7 @@ class PiAwareLocalFlightsPlugin(BasePlugin):
             return airline_name
         airline_code = self._coerce_str(flight.get("airline_code"))
         if airline_code:
-            return airline_code
+            return self.AIRLINE_NAME_BY_CODE.get(airline_code, airline_code)
         return self._coerce_str(flight.get("callsign"), fallback="ADS-B")
 
     def _detail_text(self, flight: Dict[str, Any]) -> str:

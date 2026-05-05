@@ -408,6 +408,18 @@ class TestPiAwareLocalFlightsPlugin(PluginTestBase):
 
         assert plugin._detail_text({"aircraft_type": "A321neo", "altitude_ft": 35000}) == "A321neo"
 
+    def test_title_text_maps_common_airline_code_to_name(self, plugin_id):
+        config = {
+            **self.base_config,
+            "enabled": True,
+            "lat": 33.6634,
+            "lon": -116.3100,
+            "radius_km": 120,
+        }
+        plugin = self._instantiate_plugin(plugin_id, config, _StubDisplayManager())
+
+        assert plugin._title_text({"airline_code": "AAL"}) == "American"
+
     def test_unofficial_fallback_without_token_can_still_enrich(self, plugin_id):
         config = {
             **self.base_config,
